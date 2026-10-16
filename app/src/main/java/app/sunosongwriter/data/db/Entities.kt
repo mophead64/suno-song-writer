@@ -107,3 +107,32 @@ data class RequestCountEntity(
     val day: String,
     val count: Int,
 )
+
+/** One model request's tokens and cost (spec 5.17). No foreign keys: usage outlives songs and sessions. */
+@Entity(tableName = "usage_record", indices = [Index("at"), Index("songId"), Index("sessionId")])
+data class UsageRecordEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val backendId: Long,
+    /** Kept for display after the backend is deleted. */
+    val backendName: String,
+    val modelId: String,
+    val songId: Long?,
+    val sessionId: Long?,
+    val messageId: Long?,
+    val inputTokens: Int,
+    val outputTokens: Int,
+    val costUsd: Double?,
+    /** [app.sunosongwriter.domain.usage.CostSource] name. */
+    val costSource: String,
+    val at: Long,
+)
+
+/** The editable price table, for estimating costs that providers don't report (spec 5.17). */
+@Entity(tableName = "price_entry", primaryKeys = ["backendId", "modelId"])
+data class PriceEntryEntity(
+    val backendId: Long,
+    val modelId: String,
+    val inputPerMTok: Double,
+    val outputPerMTok: Double,
+    val updatedAt: Long,
+)

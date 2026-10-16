@@ -174,10 +174,11 @@ $CONTENT_FORMAT""",
         key = TemplateKey.builtIn("fix"),
         action = SessionAction.FIX,
         name = "Fix from results",
-        body = """This song was generated in Suno and the results had problems. Change the style prompt, lyric tags and settings to fix them, using the suggested fixes. Keep the song's words and sound.
+        body = """This song was generated in Suno and the results had problems. Change the style prompt, lyric tags and settings to fix them, applying the suggested fixes below. Keep the song's words, story and sound, and change nothing that isn't needed for the fixes.
 
 $SONG
 
+What was sent to Suno:
 $CURRENT
 
 What came back from Suno:
@@ -185,10 +186,65 @@ What came back from Suno:
 
 Extra instructions: {{instructions}}
 
+$SUNO_RULES
+
+Always give the complete style prompt and the complete lyrics, not just the parts you changed.
+
 $CONTENT_FORMAT""",
     )
 
-    val all: List<PromptTemplate> = listOf(WRITE_LYRICS, WRITE_STYLE, REVIEW, IMPLEMENT, TWEAK, FINALISE, FIX)
+    val QUICK_START = PromptTemplate(
+        key = TemplateKey.builtIn("quick-start"),
+        action = SessionAction.QUICK_START,
+        name = "Quick start",
+        body = """You are a songwriter and record producer turning an idea into a complete first draft of a song that will be generated with Suno. The team will refine it afterwards, so make it a strong, complete starting point.
+
+The idea:
+{{concept}}
+
+Title so far: {{title}}
+Artist: {{artist}}
+Genre tags so far: {{tags}}
+
+Extra instructions: {{instructions}}
+
+$SUNO_RULES
+- Include a production clause in the style, e.g. "high-fidelity studio production, close-mic vocals, crisp transients, clear instrument separation, stable loudness".
+- One main musical identity plus two or three interesting influences works better than many genres.
+- Keep the whole style prompt under about 1,000 characters.
+
+Reply in exactly this format, with these headings on their own lines:
+TITLE:
+<a short, memorable song title>
+TAGS:
+<two to four genre tags, comma-separated>
+STYLE:
+<the complete style prompt>
+LYRICS:
+<the complete lyrics>
+SETTINGS:
+Weirdness: <0-100>%
+Style Influence: <0-100>%
+NOTE:
+<one line describing the song>""",
+    )
+
+    val CHAIR = PromptTemplate(
+        key = TemplateKey.builtIn("chair"),
+        action = SessionAction.CHAIR,
+        name = "Chair decision",
+        body = """You are chairing a songwriting team's debate about a song that will be generated with Suno. Make the decision for the team, the way a good producer would: keep what serves the song, drop what doesn't.
+
+$SONG
+
+$CURRENT
+
+Extra instructions: {{instructions}}
+
+{{suggestions}}""",
+    )
+
+    val all: List<PromptTemplate> = listOf(QUICK_START, WRITE_LYRICS, WRITE_STYLE, REVIEW, IMPLEMENT, TWEAK, FINALISE, FIX, CHAIR)
 
     fun forAction(action: SessionAction): PromptTemplate = all.first { it.action == action }
 

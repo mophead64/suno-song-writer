@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -112,6 +113,21 @@ class TeamViewModel(savedState: SavedStateHandle, private val c: AppContainer) :
         viewModelScope.launch {
             try {
                 c.runner.start(RunRequest(songId, variant, action, participantId, templateKey, instructions))
+            } catch (e: RunException) {
+                _message.value = e.message
+            }
+        }
+    }
+
+    /** Quick start: saves the idea as the song's concept, then one model drafts everything from it. */
+    fun quickStart(request: QuickStartRequest, onStarted: () -> Unit) {
+        val variant = variantId.value ?: return
+        viewModelScope.launch {
+            try {
+                val song = c.songs.observeSong(songId).first() ?: return@launch
+                if (song.concept != request.idea) c.songs.updateSong(song.copy(concept = request.idea))
+                c.runner.start(RunRequest(songId, variant, SessionAction.QUICK_START, request.participantId, instructions = request.instructions))
+                onStarted()
             } catch (e: RunException) {
                 _message.value = e.message
             }

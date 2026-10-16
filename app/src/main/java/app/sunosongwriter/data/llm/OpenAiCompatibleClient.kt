@@ -120,6 +120,36 @@ class OpenAiCompatibleClient(
         }
     }
 
+    /**
+     * OpenRouter's remaining credit (spec 5.17): the account's balance from `/credits`, and this key's own
+     * limit from `/key`. Either half can be missing; `/key` failing is an error.
+     */
+    suspend fun openRouterCredit(endpoint: Endpoint): OpenRouterCredit = withContext(Dispatchers.IO) {
+        val key = getJson(endpoint, "key") ?: throw LlmException(LlmError.Unknown("Unexpected reply from OpenRouter's /key."))
+        val credits = try {
+            getJson(endpoint, "credits")
+        } catch (_: LlmException) {
+            null // some keys can't read the account's credits
+        }
+        OpenRouterCredit.parse(key, credits)
+    }
+
+    private fun getJson(endpoint: Endpoint, path: String): JsonObject? {
+        val url = resolve(endpoint.baseUrl, path)
+        checkUrl(url, endpoint.baseUrl)?.let { throw LlmException(it) }
+        val request = requestBuilder(url!!, endpoint).get().build()
+        return try {
+            http.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) throw LlmException(mapHttpError(response))
+                json.parseToJsonElement(response.body.string()) as? JsonObject
+            }
+        } catch (e: IOException) {
+            throw LlmException(mapIoError(e))
+        } catch (_: IllegalArgumentException) {
+            null
+        }
+    }
+
     private fun readStream(response: Response, emit: (ChatEvent) -> Unit) {
         val source = response.body.source()
         var finishReason: String? = null

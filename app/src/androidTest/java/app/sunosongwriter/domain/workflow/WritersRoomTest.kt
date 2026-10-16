@@ -240,4 +240,59 @@ class WritersRoomTest {
         assertTrue(lyricsStep.warning!!.contains("fallback"))
         assertEquals(listOf("writer", "spare", "critic"), script.calls.map { it.first })
     }
+
+    private val detailedStyle = "STYLE:\nGenre: pop-punk\nVocals: gritty\nDrums: fast punk beat\nProduction: close-mic\nNOTE:\ndetailed"
+    private val critique = """{"verdict":"changes","suggestions":[{"target":"lyrics","section":"Verse","change":"Add thunder"},{"target":"style","section":"Drums","change":"Use blast beats everywhere"}]}"""
+    private val agree = """{"verdict":"changes","suggestions":[{"target":"lyrics","section":"Verse","change":"Add some thunder"}]}"""
+
+    @Test
+    fun automaticChairRunsWithoutAnyInput() = runBlocking {
+        val t = team()
+        val config = RoomConfig(listOf(t.writer, t.critic), lyricistId = null, proposeStyles = true, t.writer, finaliserId = t.writer, roundCap = 2, chair = ChairMode.AUTO, autoAcceptBackers = 2)
+        val id = room.create(t.songId, t.draftId, config)
+        script.queue("writer", style, critique, implemented, approve, finalised)
+        script.queue("critic", detailedStyle, agree, approve)
+
+        assertEquals(RoomStatus.Over, drive(id))
+
+        val final = state(id)
+        assertEquals(RoomStage.DONE, final.stage)
+        val consensus = songs.latest(final.consensusVariantId)!!.content
+        // The critic's style was the more detailed proposal.
+        assertEquals("fast punk beat", consensus.style[app.sunosongwriter.domain.model.StyleSection.DRUMS])
+        // Thunder was backed by both reviewers; blast beats by one, so rejected.
+        val decisions = sessions.suggestions(id).associate { it.change to it.decision }
+        assertEquals(Decision.ACCEPTED, decisions["Add thunder"])
+        assertEquals(Decision.REJECTED, decisions["Use blast beats everywhere"])
+        assertTrue(consensus.lyrics.contains("Thunder too"))
+        assertTrue(final.refinedVariantId != null)
+    }
+
+    @Test
+    fun aParticipantChairsAndTheUserCanTakeOver() = runBlocking {
+        val t = team()
+        val config = RoomConfig(listOf(t.critic), lyricistId = null, proposeStyles = true, t.writer, finaliserId = null, roundCap = 2, chair = ChairMode.MODEL, chairId = t.writer)
+        val id = room.create(t.songId, t.draftId, config)
+        script.queue("critic", detailedStyle, critique, agree)
+        // The chair picks proposal 1, accepts change 1 of 2, and in round 2 gives a reply it can't be held to.
+        script.queue("writer", "```json\n{\"pick\": 1, \"reason\": \"detailed\"}\n```", """{"accept": [1], "reason": "thunder fits"}""", implemented, "I think they're all fine")
+
+        assertEquals(RoomStatus.WaitingForChair, drive(id))
+
+        val chairSteps = sessions.messages(id).filter { it.action == app.sunosongwriter.domain.prompt.SessionAction.CHAIR }
+        assertEquals(3, chairSteps.size)
+        assertTrue(chairSteps.first().prompt.contains("1. From Critic"))
+        assertTrue(chairSteps[1].prompt.contains("Add thunder"))
+        assertTrue(chairSteps.last().error!!.contains("Decide yourself"))
+        val decisions = sessions.suggestions(id).associate { it.change to it.decision }
+        assertEquals(Decision.ACCEPTED, decisions["Add thunder"])
+        assertEquals(Decision.REJECTED, decisions["Use blast beats everywhere"])
+        assertEquals(RoomStage.REVIEW_DECISION, state(id).stage)
+        assertEquals(2, state(id).round)
+
+        room.setChair(id, ChairMode.YOU)
+        assertEquals(ChairMode.YOU, room.config(sessions.get(id)!!).chair)
+        room.implementAccepted(id)
+        assertEquals(RoomStatus.Over, drive(id))
+    }
 }

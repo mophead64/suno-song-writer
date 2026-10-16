@@ -144,21 +144,21 @@
     {
       "id": "cerebras",
       "name": "Cerebras",
-      "description": "Very fast inference for open-weight models.",
+      "description": "Very fast inference for open-weight models. Paid: new accounts get a short trial credit.",
       "baseUrl": "https://api.cerebras.ai/v1",
       "auth": "bearer",
       "freeAccess": "key_tier",
       "freeTierDefault": false,
       "limits": {
-        "rpm": 30
+        "rpm": 5
       },
       "limitScope": "model",
       "dailyResetZone": "UTC",
       "dataUseNote": "Check Cerebras' current data-use policy for your plan.",
-      "limitsNote": "Unverified: as of October 2026 reports conflict on whether Cerebras still has a free tier. Only turn on 'free tier key' if your account shows one.",
+      "limitsNote": "No free tier: API access needs a verified payment method. New accounts get $5 of trial credit that expires after 30 days, limited to 5 requests a minute and 1M tokens a day per model. Raise the per-minute limit if you're on a paid plan.",
       "signupUrl": "https://cloud.cerebras.ai",
-      "verifiedOn": "2026-10-16",
-      "unverified": true
+      "limitsUrl": "https://inference-docs.cerebras.ai/support/rate-limits",
+      "verifiedOn": "2026-10-16"
     },
     {
       "id": "ollama-cloud",
@@ -172,7 +172,7 @@
       "limitScope": "backend",
       "dailyResetZone": "UTC",
       "dataUseNote": "Check Ollama's current data-use policy for cloud models.",
-      "limitsNote": "Unverified: Ollama's free plan uses session and weekly usage caps rather than published per-request limits. Turn on 'free tier key' if you're on the free plan.",
+      "limitsNote": "Unverified: Ollama's free plan includes a small starter allowance each month on a few starter models (not named), one request at a time; other usage is paid with credits. Turn on 'free tier key' only if you're sure the models you pick are covered.",
       "signupUrl": "https://ollama.com/settings/keys",
       "limitsUrl": "https://ollama.com/settings/usage",
       "verifiedOn": "2026-10-16",

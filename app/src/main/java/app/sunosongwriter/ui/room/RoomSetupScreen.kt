@@ -37,6 +37,7 @@ import app.sunosongwriter.AppContainer
 import app.sunosongwriter.domain.model.Role
 import app.sunosongwriter.domain.usage.RequestsLeft
 import app.sunosongwriter.domain.workflow.RoomConfig
+import app.sunosongwriter.domain.workflow.ChairMode
 import app.sunosongwriter.domain.workflow.WritersRoom
 import app.sunosongwriter.ui.RoomSetupRoute
 import app.sunosongwriter.ui.appViewModel
@@ -50,6 +51,10 @@ import app.sunosongwriter.ui.components.rememberLocalNetworkGate
 import app.sunosongwriter.ui.song.Picker
 import app.sunosongwriter.ui.song.TeamMember
 import app.sunosongwriter.ui.song.observeTeam
+import app.sunosongwriter.domain.usage.CostEstimate
+import app.sunosongwriter.domain.usage.Price
+import app.sunosongwriter.domain.usage.SpendCheck
+import app.sunosongwriter.domain.usage.SpendLimits
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
@@ -67,15 +72,19 @@ data class RoomForm(
     val implementerId: Long?,
     val finaliserId: Long?,
     val roundCap: Int = 3,
+    val chair: ChairMode = ChairMode.YOU,
+    val autoAcceptBackers: Int = 2,
+    val chairId: Long? = null,
 ) {
     fun toConfig(): RoomConfig? = implementerId?.let {
-        RoomConfig(reviewerIds.toList(), lyricistId, proposeStyles, it, finaliserId, roundCap)
+        RoomConfig(reviewerIds.toList(), lyricistId, proposeStyles, it, finaliserId, roundCap, chair, autoAcceptBackers, chairId.takeIf { chair == ChairMode.MODEL })
     }
 }
 
 /** One participant's line in the pre-run check (spec 5.2). */
-data class CheckLine(val member: TeamMember, val requests: Int, val left: RequestsLeft?) {
+data class CheckLine(val member: TeamMember, val requests: Int, val left: RequestsLeft?, val price: Price? = null) {
     val shortfall: Boolean get() = left != null && left.remaining < requests
+    val isPaid: Boolean get() = member.isFree == false && !member.isRelay
 }
 
 data class RoomSetupUi(
@@ -84,10 +93,19 @@ data class RoomSetupUi(
     val hasLyrics: Boolean,
     val check: List<CheckLine>,
     val freeOnly: Boolean,
+    val monthSpendUsd: Double = 0.0,
+    val limits: SpendLimits = SpendLimits(),
 ) {
+    /** Estimated cost of the paid participants with a price, low to high; null if none are priced. */
+    val costRange: ClosedFloatingPointRange<Double>?
+        get() = check.filter { it.isPaid && it.price != null }
+            .map { CostEstimate.range(it.requests, it.price!!) }
+            .reduceOrNull { a, b -> (a.start + b.start)..(a.endInclusive + b.endInclusive) }
+    val unpriced: List<CheckLine> get() = check.filter { it.isPaid && it.price == null }
     val blocked: List<TeamMember> get() = check.map { it.member }.filter { it.blockedReason != null }
     val relayPrompts: Int get() = check.filter { it.member.isRelay }.sumOf { it.requests }
-    val canStart: Boolean get() = form.reviewerIds.isNotEmpty() && form.implementerId != null && blocked.isEmpty()
+    val canStart: Boolean
+        get() = form.reviewerIds.isNotEmpty() && form.implementerId != null && blocked.isEmpty() && (form.chair != ChairMode.MODEL || form.chairId != null)
 }
 
 class RoomSetupViewModel(savedState: SavedStateHandle, private val c: AppContainer) : ViewModel() {
@@ -111,6 +129,12 @@ class RoomSetupViewModel(savedState: SavedStateHandle, private val c: AppContain
             CheckLine(member, n, left)
         }
         RoomSetupUi(members, formNow, hasLyrics, check, freeOnly)
+    }.combine(combine(c.usage.prices, c.usage.observeMonthSpend(), c.settings.spendLimits, ::Triple)) { ui, (prices, month, limits) ->
+        ui?.copy(
+            check = ui.check.map { line -> line.copy(price = line.member.participant.model?.let { ref -> prices.firstOrNull { it.backendId == ref.backendId && it.modelId == ref.modelId } }) },
+            monthSpendUsd = month,
+            limits = limits,
+        )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** Sensible defaults from participants' roles (spec 5.5; open questions Q1–Q4 default to these). */
@@ -158,12 +182,12 @@ fun RoomSetupScreen(onBack: () -> Unit, onStarted: (Long) -> Unit, onOpenStarter
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             if (state.members.isEmpty()) {
-                Text("You need a team first: a few participants, each a model with a name and role.")
-                Button(onClick = onOpenStarterTeam) { Text("Set up a free starter team") }
+                Text("You need a team first: a few participants, each a model from one of your backends with a name and role.")
+                Button(onClick = onOpenStarterTeam) { Text("Build your team") }
                 return@Column
             }
             Text(
-                "Your team writes, proposes styles, reviews in rounds and implements what you accept. You're the chair: the run pauses for your decisions and notifies you.",
+                "Your team writes, proposes styles, reviews in rounds and implements what the chair accepts. You can chair it yourself, or let it run on its own.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -201,6 +225,7 @@ fun RoomSetupScreen(onBack: () -> Unit, onStarted: (Long) -> Unit, onOpenStarter
                     if (n == f.roundCap) Button(onClick = {}) { Text("$n") } else OutlinedButton(onClick = { vm.edit { it.copy(roundCap = n) } }) { Text("$n") }
                 }
             }
+            ChairSection(f, state.members, choices, ::name) { change -> vm.edit(change) }
             Text(
                 "The debate stops early when every reviewer approves, or when you end it.",
                 style = MaterialTheme.typography.bodySmall,
@@ -258,12 +283,84 @@ private fun PreRunCheck(state: RoomSetupUi) {
                 when {
                     state.freeOnly -> "Free-only mode is on: this run costs \$0."
                     allFree -> "Every participant is free: this run costs \$0."
-                    else -> "Some participants use paid models; cost depends on their pricing."
+                    else -> state.costRange?.let { "Estimated cost: ${SpendCheck.format(it.start)}–${SpendCheck.format(it.endInclusive)}" + if (state.unpriced.isEmpty()) "." else ", plus unpriced participants." }
+                        ?: "Some participants use paid models with no price in the price table, so the cost can't be estimated."
                 },
                 style = MaterialTheme.typography.bodyMedium,
             )
+            if (!state.freeOnly && !allFree) {
+                state.unpriced.forEach {
+                    Text("${it.member.participant.name}: add its model to Settings → Usage and limits → Price table for an estimate. OpenRouter reports the real cost after each step.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                state.limits.monthlyUsd?.let { limit ->
+                    val left = (limit - state.monthSpendUsd).coerceAtLeast(0.0)
+                    val tight = state.costRange?.let { it.endInclusive > left } == true
+                    Text(
+                        "${SpendCheck.format(left)} left of this month's ${SpendCheck.format(limit)} limit." + if (tight) " The run may hit it and pause." else "",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (tight) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
         }
     }
 }
 
 private fun Set<Long>.toggle(id: Long): Set<Long> = if (id in this) this - id else this + id
+
+/** Who decides at the style pick and after each round (spec 5.5, auto chair). */
+@Composable
+private fun ChairSection(
+    f: RoomForm,
+    members: List<TeamMember>,
+    choices: List<Pair<String, Long?>>,
+    name: (Long?) -> String?,
+    edit: ((RoomForm) -> RoomForm) -> Unit,
+) {
+    Text("Chair", style = MaterialTheme.typography.titleMedium)
+    Picker(
+        "Who decides",
+        when (f.chair) {
+            ChairMode.YOU -> "You: the run pauses for your decisions"
+            ChairMode.AUTO -> "Automatic: runs without you"
+            ChairMode.MODEL -> "A participant decides"
+        },
+        listOf(
+            "You: the run pauses for your decisions" to ChairMode.YOU,
+            "Automatic: runs without you" to ChairMode.AUTO,
+            "A participant decides" to ChairMode.MODEL,
+        ),
+    ) { mode -> edit { it.copy(chair = mode) } }
+    when (f.chair) {
+        ChairMode.YOU -> Unit
+        ChairMode.AUTO -> {
+            val reviewers = f.reviewerIds.size.coerceAtLeast(1)
+            Text(
+                run {
+                    val n = minOf(f.autoAcceptBackers, reviewers)
+                    "Picks the most detailed style proposal, and accepts suggestions " +
+                        (if (n == 1) "from any reviewer" else "that at least $n reviewers agree on") + ". You can take over the chair at any time."
+                },
+                style = MaterialTheme.typography.bodySmall,
+            )
+            if (reviewers > 1) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Backed by at least", style = MaterialTheme.typography.bodySmall)
+                    (1..minOf(reviewers, 5)).forEach { n ->
+                        if (n == f.autoAcceptBackers) Button(onClick = {}) { Text("$n") } else OutlinedButton(onClick = { edit { it.copy(autoAcceptBackers = n) } }) { Text("$n") }
+                    }
+                }
+            }
+        }
+        ChairMode.MODEL -> {
+            Picker("Chair participant", name(f.chairId) ?: "Choose", choices.filter { it.second != null }) { id -> edit { it.copy(chairId = id) } }
+            Text(
+                "They see the proposals or suggestions and decide in one step per round. If their reply can't be read, the run waits for you. You can take over at any time.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            if (members.firstOrNull { it.participant.id == f.chairId }?.isRelay == true) {
+                Text("A relay chair means relaying their prompt each round, so the run won't be hands-free.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
+            }
+        }
+    }
+}

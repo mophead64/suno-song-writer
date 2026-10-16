@@ -42,6 +42,10 @@ interface TemplateDao {
 
 @Dao
 interface SessionDao {
+    /** Whether any step has ever finished, for the Getting started checklist. */
+    @Query("SELECT EXISTS(SELECT 1 FROM session_message WHERE status = 'DONE')")
+    fun observeAnyStepDone(): Flow<Boolean>
+
     @Query("SELECT * FROM session WHERE variantId = :variantId AND type = :type LIMIT 1")
     suspend fun find(variantId: Long, type: String): SessionEntity?
 
@@ -59,6 +63,9 @@ interface SessionDao {
 
     @Query("UPDATE session SET stateJson = :stateJson WHERE id = :id")
     suspend fun setState(id: Long, stateJson: String)
+
+    @Query("UPDATE session SET configJson = :configJson WHERE id = :id")
+    suspend fun setConfig(id: Long, configJson: String)
 
     @Query("SELECT * FROM session WHERE songId = :songId AND type = :type ORDER BY createdAt DESC")
     fun observeByType(songId: Long, type: String): Flow<List<SessionEntity>>

@@ -24,8 +24,15 @@ import androidx.room.RoomDatabase
         SessionMessageEntity::class,
         SuggestionEntity::class,
         SnapshotEntity::class,
+        SunoResultEntity::class,
+        ResultIssueEntity::class,
+        SongWinnerEntity::class,
+        IssueFixEntity::class,
+        RecipeEntity::class,
+        UsageRecordEntity::class,
+        PriceEntryEntity::class,
     ],
-    version = 6,
+    version = 8,
     exportSchema = true,
     autoMigrations = [
         // 1 → 2: library tables (iteration 2). Additive only.
@@ -38,6 +45,10 @@ import androidx.room.RoomDatabase
         AutoMigration(from = 4, to = 5),
         // 5 → 6: snapshots of what was sent to Suno (iteration 5). Additive only.
         AutoMigration(from = 5, to = 6),
+        // 6 → 7: results, issue fixes, winners and recipes; Fix steps' snapshot (iteration 6). Additive only.
+        AutoMigration(from = 6, to = 7),
+        // 7 → 8: usage records and the price table (iteration 7). Additive only.
+        AutoMigration(from = 7, to = 8),
     ],
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -51,6 +62,9 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun templateDao(): TemplateDao
     abstract fun sessionDao(): SessionDao
     abstract fun snapshotDao(): SnapshotDao
+    abstract fun resultDao(): ResultDao
+    abstract fun recipeDao(): RecipeDao
+    abstract fun usageDao(): UsageDao
 
     companion object {
         const val NAME = "songwriter.db"

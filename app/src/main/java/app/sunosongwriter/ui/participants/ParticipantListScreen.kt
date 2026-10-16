@@ -98,12 +98,12 @@ fun ParticipantListScreen(onBack: () -> Unit, onAdd: () -> Unit, onOpen: (Long) 
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("No participants yet", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "A participant is a model with a name and a role, like \"Gemini, lyricist\".",
+                        "A participant is a model from one of your backends, with a name and a role, like \"Gemini, lyricist\". Build a team from all your backends at once, or add them one by one.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 8.dp),
                     )
-                    androidx.compose.material3.Button(onClick = onStarterTeam, modifier = Modifier.padding(top = 16.dp)) { Text("Set up a free starter team") }
+                    androidx.compose.material3.Button(onClick = onStarterTeam, modifier = Modifier.padding(top = 16.dp)) { Text("Build your team from your backends") }
                 }
             }
             return@Scaffold

@@ -37,12 +37,9 @@ fun PresetPickerScreen(onBack: () -> Unit, onPick: (String) -> Unit) {
                     modifier = Modifier.padding(16.dp),
                 )
             }
-            val groups = listOf(
-                "On your computer" to presets.filter { it.local },
-                "Free chat apps (you relay by hand)" to presets.filter { it.kind == BackendKind.RELAY },
-                "API providers" to presets.filter { !it.local && it.kind != BackendKind.RELAY && it.id != "custom" },
-                "Other" to presets.filter { it.id == "custom" },
-            )
+            val listed = presets.filter { it.id != "custom" }
+            val groups = BackendGroup.entries.map { g -> g.label to listed.filter { BackendGroup.of(it) == g } } +
+                ("Other" to presets.filter { it.id == "custom" })
             groups.filter { it.second.isNotEmpty() }.forEach { (heading, group) ->
                 item(key = "h-$heading") {
                     Text(heading, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp))

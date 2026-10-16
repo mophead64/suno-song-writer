@@ -60,6 +60,9 @@ data class SessionMessage(
     val chosen: Boolean = false,
     val costUsd: Double? = null,
     val retryAtMillis: Long? = null,
+    /** Fix from results: the snapshot it fixes, and the issue labels it targets. */
+    val snapshotId: Long? = null,
+    val fixesIssues: String? = null,
 )
 
 /** A relay step waiting for its reply, with the song it belongs to (for the share sheet). */

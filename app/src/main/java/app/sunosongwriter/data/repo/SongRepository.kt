@@ -124,6 +124,8 @@ class SongRepository(
 
     suspend fun latest(variantId: Long): Version? = versionDao.latest(variantId)?.let(::toDomain)
 
+    suspend fun version(id: Long): Version? = versionDao.version(id)?.let(::toDomain)
+
     /** Saves [content] as the variant's next version. Returns null if nothing changed. */
     suspend fun saveVersion(variantId: Long, content: SongContent, author: Author, changeNote: String, step: String? = null): Version? =
         db.withTransaction {

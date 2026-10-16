@@ -48,6 +48,7 @@ import app.sunosongwriter.domain.review.ReplyParser
 import app.sunosongwriter.domain.review.SuggestionGroup
 import app.sunosongwriter.domain.review.SuggestionGrouping
 import app.sunosongwriter.domain.review.SuggestionTarget
+import app.sunosongwriter.domain.workflow.ChairMode
 import app.sunosongwriter.domain.workflow.MessageStatus
 import app.sunosongwriter.domain.workflow.RoomConfig
 import app.sunosongwriter.domain.workflow.RoomStage
@@ -75,6 +76,9 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import app.sunosongwriter.domain.usage.SpendCheck
+import app.sunosongwriter.domain.usage.SpendLevel
+import app.sunosongwriter.domain.usage.SpendLimits
 import java.text.DateFormat
 import java.util.Date
 
@@ -92,11 +96,28 @@ data class RoomUi(
     val versionNumbers: Map<Long, Int>,
     /** Variant id → its newest version id. */
     val latestVersionOf: Map<Long, Long>,
+    val spend: RunSpend = RunSpend(),
 ) {
     val tokens: Int get() = messages.sumOf { (it.inputTokens ?: 0) + (it.outputTokens ?: 0) }
-    val costUsd: Double? get() = messages.mapNotNull { it.costUsd }.takeIf { it.isNotEmpty() }?.sum()
     val running: Boolean get() = messages.any { it.status.isActive }
-    val waitingRelay: Boolean get() = messages.any { it.status == MessageStatus.WAITING_RELAY && it.id in state.stepIds }
+    val waitingRelay: Boolean get() = messages.any { it.status == MessageStatus.WAITING_RELAY && (it.id in state.stepIds || it.id == state.chairStepId) }
+}
+
+/** What this run and this month have cost, against the spend limits (spec 5.17). */
+data class RunSpend(val runUsd: Double = 0.0, val monthUsd: Double = 0.0, val limits: SpendLimits = SpendLimits()) {
+    /** A warning once either limit is near or reached, else null. */
+    val warning: String?
+        get() {
+            val month = SpendCheck.level(monthUsd, limits.monthlyUsd, limits.warnPercent)
+            val run = SpendCheck.level(runUsd, limits.sessionUsd, limits.warnPercent)
+            return when {
+                month == SpendLevel.REACHED -> "Monthly spend limit reached (${SpendCheck.format(monthUsd)}): paid steps are refused."
+                run == SpendLevel.REACHED -> "This run's spend limit is reached (${SpendCheck.format(runUsd)}): paid steps are refused."
+                month == SpendLevel.WARN -> "${SpendCheck.format(monthUsd)} of the ${SpendCheck.format(limits.monthlyUsd ?: 0.0)} monthly limit spent."
+                run == SpendLevel.WARN -> "${SpendCheck.format(runUsd)} of this run's ${SpendCheck.format(limits.sessionUsd ?: 0.0)} limit spent."
+                else -> null
+            }
+        }
 }
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
@@ -129,6 +150,8 @@ class RoomViewModel(savedState: SavedStateHandle, private val c: AppContainer) :
                 latestVersionOf = versions.groupBy { it.variantId }.mapValues { (_, vs) -> vs.maxBy { it.number }.id },
             )
         }
+    }.combine(combine(c.usage.observeSessionSpend(sessionId), c.usage.observeMonthSpend(), c.settings.spendLimits, ::RunSpend)) { room, spend ->
+        room.copy(spend = spend)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     private fun chair(action: suspend () -> Unit) {
@@ -142,6 +165,7 @@ class RoomViewModel(savedState: SavedStateHandle, private val c: AppContainer) :
     fun implement() = chair { c.room.implementAccepted(sessionId) }
     fun finish() = chair { c.room.finishDebate(sessionId) }
     fun resume() = chair { c.room.resume(sessionId) }
+    fun takeOverChair() = chair { c.room.setChair(sessionId, ChairMode.YOU) }
     fun stopRoom() = viewModelScope.launch {
         c.room.stop(sessionId)
         c.roomScheduler.cancel(sessionId)
@@ -192,7 +216,7 @@ fun RoomScreen(
     ) { padding ->
         val room = ui ?: return@Scaffold
         LazyColumn(Modifier.fillMaxSize().padding(padding), state = list, contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            item { StatusHeader(room) }
+            item { StatusHeader(room, onTakeOver = vm::takeOverChair) }
             var lastMarker: String? = null
             room.messages.forEach { m ->
                 val marker = marker(room, m)
@@ -261,7 +285,7 @@ private fun RoundMarker(text: String) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun StatusHeader(room: RoomUi) {
+private fun StatusHeader(room: RoomUi, onTakeOver: () -> Unit) {
     val state = room.state
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
         Column(Modifier.padding(12.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -269,6 +293,15 @@ private fun StatusHeader(room: RoomUi) {
                 Tag(state.pause?.let { "Paused" } ?: state.stage.label)
                 if (state.stage !in setOf(RoomStage.LYRICS, RoomStage.STYLE_PROPOSALS, RoomStage.STYLE_PICK)) Tag("Round ${state.round} of ${room.config.roundCap}")
                 if (room.waitingRelay) Tag("Waiting for you to relay")
+                Tag("Chair: " + when (room.config.chair) {
+                    ChairMode.YOU -> "you"
+                    ChairMode.AUTO -> "automatic"
+                    ChairMode.MODEL -> room.members.firstOrNull { it.participant.id == room.config.chairId }?.participant?.name ?: "a participant"
+                })
+            }
+            state.lastChairNote?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            if (room.config.chair != ChairMode.YOU && !state.stage.isOver) {
+                TextButton(onClick = onTakeOver) { Text("Take over the chair") }
             }
             state.pause?.let { p ->
                 Text(
@@ -279,8 +312,11 @@ private fun StatusHeader(room: RoomUi) {
                 )
             }
             state.endedBecause?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-            val cost = room.costUsd?.let { " · \$" + "%.4f".format(it) } ?: ""
+            val cost = room.spend.runUsd.takeIf { it > 0 }?.let { " · " + SpendCheck.format(it) } ?: ""
             Text("${room.tokens} tokens so far$cost", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
+            room.spend.warning?.let {
+                Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+            }
         }
     }
 }

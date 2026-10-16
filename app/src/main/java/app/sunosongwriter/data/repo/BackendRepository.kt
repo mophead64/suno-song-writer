@@ -5,6 +5,7 @@ import app.sunosongwriter.data.db.ModelInfoDao
 import app.sunosongwriter.data.db.ModelInfoEntity
 import app.sunosongwriter.data.llm.Endpoint
 import app.sunosongwriter.data.llm.LlmException
+import app.sunosongwriter.data.llm.OpenRouterCredit
 import app.sunosongwriter.data.llm.OpenAiCompatibleClient
 import app.sunosongwriter.data.llm.RemoteModel
 import app.sunosongwriter.data.llm.ResolvedTarget
@@ -113,6 +114,12 @@ class BackendRepository(
         backendDao.getAll().forEach { refreshModels(it.id) }
     }
 
+    /** Remaining OpenRouter credit (spec 5.17). Other providers have no API for it, so callers show "not available". */
+    suspend fun openRouterCredit(backendId: Long): Result<OpenRouterCredit> {
+        val backend = get(backendId) ?: return Result.failure(IllegalArgumentException("No backend $backendId"))
+        return runLlm { client.openRouterCredit(endpoint(backend, apiKey(backendId))) }
+    }
+
     /** A relay backend has one "model": the chat app itself. */
     private fun relayModel(backend: Backend) = RemoteModel(RELAY_MODEL_ID, backend.name, pricedFree = true, contextLength = null)
 
@@ -124,6 +131,7 @@ class BackendRepository(
 
     companion object {
         const val RELAY_MODEL_ID = "chat"
+        const val OPENROUTER_PRESET = "openrouter"
     }
 
     private inline fun <T> runLlm(block: () -> T): Result<T> = try {

@@ -99,6 +99,10 @@ data class SessionMessageEntity(
     val costUsd: Double? = null,
     /** For a failed step: when its daily quota resets, if known. */
     val retryAtMillis: Long? = null,
+    /** Fix from results: the snapshot whose results it fixes (spec 5.13). */
+    val snapshotId: Long? = null,
+    /** Fix from results: the issue labels it targets, for the change note. */
+    val fixesIssues: String? = null,
 )
 
 @Entity(

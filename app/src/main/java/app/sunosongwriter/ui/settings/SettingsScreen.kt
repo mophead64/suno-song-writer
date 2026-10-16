@@ -63,6 +63,8 @@ fun SettingsScreen(
     onOpenParticipants: () -> Unit,
     onOpenPlayground: () -> Unit,
     onOpenTemplates: () -> Unit,
+    onOpenIssueFixes: () -> Unit,
+    onOpenUsage: () -> Unit,
 ) {
     val vm = appViewModel { c, _ -> SettingsViewModel(c.settings) }
     val freeOnly by vm.freeOnly.collectAsStateWithLifecycle()
@@ -87,20 +89,17 @@ fun SettingsScreen(
                     .semantics { role = Role.Switch },
             )
             HorizontalDivider()
-            NavItem("Backends", "Ollama, OpenRouter, Gemini and other model providers", onOpenBackends)
+            NavItem("Backends", "Models on your computer, API providers and chat apps", onOpenBackends)
             NavItem("Participants", "Your writers' room: models with a name, role and fallbacks", onOpenParticipants)
+            NavItem("Usage and limits", "Tokens and cost by day, month, backend and song; spend limits; OpenRouter credit", onOpenUsage)
             ListItem(
                 headlineContent = { Text("Suno limits") },
                 supportingContent = { Text("Style ${"%,d".format(limits.styleChars)} · lyrics ${"%,d".format(limits.lyricsChars)} characters · tags up to ${limits.tagWords} words") },
                 modifier = Modifier.clickable { editLimits = true },
             )
             NavItem("Prompt templates", "What each step asks the model; copy and edit the built-ins", onOpenTemplates)
+            NavItem("Issue fixes", "What Fix from results changes for each problem you tag on a take", onOpenIssueFixes)
             NavItem("Playground", "Send a test prompt to a participant", onOpenPlayground)
-            ListItem(
-                headlineContent = { Text("On-device models") },
-                supportingContent = { Text("Run models directly on the phone.") },
-                trailingContent = { Tag("Coming later") },
-            )
         }
     }
 

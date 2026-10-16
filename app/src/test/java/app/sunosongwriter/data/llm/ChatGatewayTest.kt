@@ -46,6 +46,7 @@ class ChatGatewayTest {
         counter: RequestCounter = FakeCounter(),
         freeOnly: Boolean = true,
         quotas: QuotaTracker = QuotaTracker { testScheduler.currentTime },
+        ledger: UsageLedger = UsageLedger.None,
     ) = ChatGateway(
         transport = transport,
         targets = { ResolvedTarget(backend, model, Endpoint(backend.baseUrl, apiKey)) },
@@ -54,7 +55,48 @@ class ChatGatewayTest {
         quotas = quotas,
         freeOnly = { freeOnly },
         nowMillis = { testScheduler.currentTime },
+        ledger = ledger,
     )
+
+    private class FakeLedger(val block: LlmError? = null) : UsageLedger {
+        val recorded = mutableListOf<UsageEvent>()
+        val checked = mutableListOf<UsageTag>()
+        override suspend fun record(event: UsageEvent) {
+            recorded += event
+        }
+        override suspend fun spendBlock(tag: UsageTag): LlmError? = block.also { checked += tag }
+    }
+
+    @Test
+    fun recordsUsageOncePerFinishedRequestWithItsTag() = runTest {
+        val ledger = FakeLedger()
+        val reply = listOf(ChatEvent.Delta("hi"), ChatEvent.Usage(120, 30, 0.0021), ChatEvent.Completed("stop", null))
+        val tag = UsageTag(songId = 7, sessionId = 3, messageId = 11)
+
+        gateway(FakeTransport(reply), ledger = ledger).stream(ref, hello, tag = tag).toList()
+
+        val e = ledger.recorded.single()
+        assertEquals(tag, e.tag)
+        assertEquals(120, e.inputTokens)
+        assertEquals(30, e.outputTokens)
+        assertEquals(0.0021, e.reportedCostUsd!!, 1e-9)
+        assertTrue(e.isFree)
+        // Free requests are never checked against spend limits.
+        assertTrue(ledger.checked.isEmpty())
+    }
+
+    @Test
+    fun aReachedSpendLimitStopsPaidRequestsBeforeSending() = runTest {
+        val transport = FakeTransport(ok)
+        val paid = testBackend(freeAccess = FreeAccess.PRICING)
+        val model = ModelInfo(1, "model-a", "A", pricedFree = false, contextLength = null, available = true, lastSeen = 0)
+        val limit = LlmError.SpendLimit("over")
+
+        val events = gateway(transport, backend = paid, model = model, freeOnly = false, ledger = FakeLedger(limit)).stream(ref, hello).toList()
+
+        assertEquals(listOf(ChatEvent.Failed(limit)), events)
+        assertEquals(0, transport.calls)
+    }
 
     @Test
     fun passesThroughASuccessfulReplyAndCountsIt() = runTest {

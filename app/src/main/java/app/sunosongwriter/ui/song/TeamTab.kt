@@ -130,7 +130,13 @@ fun TeamTab(
         )
     }
     val numbers = versions.associate { it.id to it.number }
-    ui.messages.forEach { m ->
+    // Long transcripts render the newest steps; older ones load on request (they're all in the database).
+    var showAll by remember { mutableStateOf(false) }
+    val hidden = if (showAll) 0 else (ui.messages.size - RECENT_STEPS).coerceAtLeast(0)
+    if (hidden > 0) {
+        TextButton(onClick = { showAll = true }) { Text("Show $hidden earlier step${if (hidden == 1) "" else "s"}") }
+    }
+    ui.messages.drop(hidden).forEach { m ->
         MessageCard(
             m,
             member = ui.members.firstOrNull { it.participant.id == m.participantId },
@@ -156,6 +162,8 @@ fun TeamTab(
         }
     }
 }
+
+private const val RECENT_STEPS = 25
 
 /** The Writers' Room: the automated run of spec section 2. */
 @Composable
@@ -429,11 +437,11 @@ private fun RunDialog(
     )
 }
 
-private fun suggestedMember(members: List<TeamMember>, action: SessionAction): Long? {
+internal fun suggestedMember(members: List<TeamMember>, action: SessionAction): Long? {
     val role = when (action) {
-        SessionAction.WRITE_LYRICS -> Role.LYRICIST
+        SessionAction.WRITE_LYRICS, SessionAction.QUICK_START -> Role.LYRICIST
         SessionAction.WRITE_STYLE -> Role.STYLIST
-        SessionAction.REVIEW -> Role.REVIEWER
+        SessionAction.REVIEW, SessionAction.CHAIR -> Role.REVIEWER
         SessionAction.IMPLEMENT, SessionAction.TWEAK, SessionAction.FIX -> Role.IMPLEMENTER
         SessionAction.FINALISE -> Role.FINALISER
     }

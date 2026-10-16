@@ -28,30 +28,63 @@ class StarterTeamTest {
     }
 
     @Test
+    fun ollamaPrefersOfficialModelsOverCommunityFineTunes() {
+        val local = listOf("artifish/llama3.2-uncensored:latest", "llama3.2:latest", "llava:latest").map { model(it) }
+        assertEquals("llama3.2:latest", StarterTeam.pickModel("ollama-local", local, testBackend())?.modelId)
+        assertEquals("someone/model:latest", StarterTeam.pickModel("ollama-local", listOf(model("someone/model:latest")), testBackend())?.modelId)
+    }
+
+    @Test
     fun noFreeChatModelMeansNoPick() {
         assertNull(StarterTeam.pickModel("ollama-local", listOf(model("nomic-embed-text")), testBackend()))
     }
 
+    private fun seat(id: Long, preset: String?, relay: Boolean = false) = TeamSeat(id, preset, relay, ModelRef(id, "m$id"))
+
     @Test
     fun strongestWritersGetLyricistAndImplementer() {
-        val roles = StarterTeam.assignRoles(listOf("ollama-local", "gemini", "groq", "relay-claude"))
+        val roles = StarterTeam.assignRoles(listOf(seat(1, "ollama-local"), seat(2, "gemini"), seat(3, "groq"), seat(4, "relay-claude", relay = true)))
 
-        assertEquals(Role.LYRICIST, roles["gemini"])
-        assertEquals(Role.IMPLEMENTER, roles["groq"])
-        assertEquals(Role.REVIEWER, roles["ollama-local"])
-        assertEquals(Role.REVIEWER, roles["relay-claude"])
+        assertEquals(Role.LYRICIST, roles[2])
+        assertEquals(Role.IMPLEMENTER, roles[3])
+        assertEquals(Role.REVIEWER, roles[1])
+        assertEquals(Role.REVIEWER, roles[4])
     }
 
     @Test
     fun relayOnlyTeamStillHasALyricist() {
-        assertEquals(Role.LYRICIST, StarterTeam.assignRoles(listOf("relay-claude", "relay-chatgpt"))["relay-claude"])
+        assertEquals(Role.LYRICIST, StarterTeam.assignRoles(listOf(seat(1, "relay-claude", true), seat(2, "relay-chatgpt", true)))[1])
+    }
+
+    @Test
+    fun unknownApiBackendsWriteBeforeLocalOnes() {
+        val roles = StarterTeam.assignRoles(listOf(seat(1, "ollama-local"), seat(2, null)))
+        assertEquals(Role.LYRICIST, roles[2])
+        assertEquals(Role.IMPLEMENTER, roles[1])
     }
 
     @Test
     fun fallbacksAreTheOtherApiModelsStrongestFirst() {
-        val refs = mapOf("ollama-local" to ModelRef(1, "llama3.2"), "gemini" to ModelRef(2, "flash"), "groq" to ModelRef(3, "gpt-oss"))
+        val seats = listOf(seat(1, "ollama-local"), seat(2, "gemini"), seat(3, "groq"), seat(4, "relay-claude", relay = true))
 
-        assertEquals(listOf(ModelRef(3, "gpt-oss"), ModelRef(1, "llama3.2")), StarterTeam.fallbacksFor("gemini", refs))
+        assertEquals(listOf(ModelRef(3, "m3"), ModelRef(1, "m1")), StarterTeam.fallbacksFor(seats[1], seats))
+        assertEquals(emptyList<ModelRef>(), StarterTeam.fallbacksFor(seats[3], seats))
+    }
+
+    @Test
+    fun namesComeFromThePresetOrTheBackend() {
+        assertEquals("Gemini", StarterTeam.participantName(testBackend().copy(presetId = "gemini", name = "Google AI Studio (Gemini)")))
+        assertEquals("My server", StarterTeam.participantName(testBackend().copy(presetId = null, name = "My server (on your computer)")))
+        assertEquals("Ollama 2", StarterTeam.uniqueName("Ollama", listOf("ollama", "Gemini")))
+        assertEquals("Groq", StarterTeam.uniqueName("Groq", listOf("Gemini")))
+    }
+
+    @Test
+    fun paidModelsCountWhenFreeOnlyIsOff() {
+        val paid = testBackend(freeAccess = FreeAccess.PRICING)
+        val listing = listOf(model("deepseek/deepseek-v4", pricedFree = false))
+        assertNull(StarterTeam.pickModel("openrouter", listing, paid))
+        assertEquals("deepseek/deepseek-v4", StarterTeam.pickModel("openrouter", listing, paid, freeOnly = false)?.modelId)
     }
 
     @Test

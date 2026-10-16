@@ -114,3 +114,82 @@ data class SnapshotEntity(
     val settingsJson: String,
     val sentAt: Long,
 )
+
+/** One Suno take generated from a snapshot (spec 5.12): a link, a rating and notes. No audio is stored. */
+@Entity(
+    tableName = "suno_result",
+    foreignKeys = [ForeignKey(SnapshotEntity::class, ["id"], ["snapshotId"], onDelete = ForeignKey.CASCADE)],
+    indices = [Index("snapshotId")],
+)
+data class SunoResultEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val snapshotId: Long,
+    /** 1, 2, 3… within the snapshot. */
+    val takeIndex: Int,
+    val link: String?,
+    /** 1–5 stars, or null when not rated. */
+    val rating: Int?,
+    val notes: String,
+    val createdAt: Long,
+    val updatedAt: Long,
+)
+
+/** An issue tag on a take: a built-in key from [app.sunosongwriter.domain.results.BuiltInIssues] or a custom tag's name. */
+@Entity(
+    tableName = "result_issue",
+    primaryKeys = ["resultId", "tag"],
+    foreignKeys = [ForeignKey(SunoResultEntity::class, ["id"], ["resultId"], onDelete = ForeignKey.CASCADE)],
+    indices = [Index("tag")],
+)
+data class ResultIssueEntity(val resultId: Long, val tag: String)
+
+/** Which variant won for a song (spec 5.12). Variants are compared by name, so win rates work across songs (5.15). */
+@Entity(
+    tableName = "song_winner",
+    foreignKeys = [ForeignKey(SongEntity::class, ["id"], ["songId"], onDelete = ForeignKey.CASCADE)],
+)
+data class SongWinnerEntity(
+    @PrimaryKey val songId: Long,
+    val variantName: String,
+    /** The snapshot it was marked from. Not a foreign key. */
+    val snapshotId: Long?,
+    val markedAt: Long,
+)
+
+/**
+ * The tag → fix table (spec 5.13). Built-in fixes live in code; a row here either overrides a built-in's
+ * fix text ([builtIn] true) or is a custom tag the user added.
+ */
+@Entity(tableName = "issue_fix")
+data class IssueFixEntity(
+    @PrimaryKey val tag: String,
+    val fixText: String,
+    val builtIn: Boolean,
+    val updatedAt: Long,
+)
+
+/**
+ * A snapshot saved as a proven recipe (spec 5.14). Never edited. It keeps its own copy of the text and
+ * song details, so it outlives the song; adapting it for a new Suno model saves a new recipe linked by
+ * [parentRecipeId].
+ */
+@Entity(tableName = "recipe", indices = [Index("snapshotId"), Index("parentRecipeId")])
+data class RecipeEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    /** Not a foreign key: the recipe outlives the song. Null for an adapted recipe. */
+    val snapshotId: Long?,
+    val songId: Long?,
+    val parentRecipeId: Long?,
+    val songTitle: String,
+    val artist: String,
+    /** JSON list of genre tags, copied from the song. */
+    val tagsJson: String,
+    val styleText: String,
+    val lyricsText: String,
+    /** JSON of [app.sunosongwriter.domain.model.SunoSettings]. */
+    val settingsJson: String,
+    /** The best take's rating when it was saved; the live rating is used while the snapshot exists. */
+    val ratingAtSave: Int?,
+    val createdAt: Long,
+)

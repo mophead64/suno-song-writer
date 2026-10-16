@@ -42,6 +42,8 @@ class SessionRepository(
 
     suspend fun setState(sessionId: Long, stateJson: String) = dao.setState(sessionId, stateJson)
 
+    suspend fun setConfig(sessionId: Long, configJson: String) = dao.setConfig(sessionId, configJson)
+
     suspend fun resetInterrupted(sessionId: Long): Int = dao.resetInterrupted(sessionId, nowMillis())
 
     suspend fun setFullTranscript(sessionId: Long, full: Boolean) = dao.setFullTranscript(sessionId, full)
@@ -59,6 +61,8 @@ class SessionRepository(
     fun observeWaitingRelay(): Flow<List<WaitingRelay>> =
         dao.observeWaitingRelay().map { rows -> rows.map { WaitingRelay(it.message.toDomain(), it.songId, inRoom = it.sessionType == ROOM) } }
 
+    val anyStepDone: Flow<Boolean> = dao.observeAnyStepDone()
+
     suspend fun insertMessage(
         sessionId: Long,
         round: Int,
@@ -74,6 +78,8 @@ class SessionRepository(
         basedOnVersionId: Long?,
         targetVariantId: Long? = null,
         proposal: Boolean = false,
+        snapshotId: Long? = null,
+        fixesIssues: String? = null,
     ): Long {
         val now = nowMillis()
         return dao.insertMessage(
@@ -84,6 +90,7 @@ class SessionRepository(
                 status = status.name, error = null, basedOnVersionId = basedOnVersionId, producedVersionId = null,
                 verdict = null, summary = null, parseFailed = false, inputTokens = null, outputTokens = null,
                 createdAt = now, updatedAt = now, targetVariantId = targetVariantId, proposal = proposal,
+                snapshotId = snapshotId, fixesIssues = fixesIssues,
             ),
         )
     }
@@ -131,7 +138,7 @@ class SessionRepository(
         verdict = verdict?.let { v -> Verdict.entries.firstOrNull { it.name == v } }, summary = summary,
         parseFailed = parseFailed, inputTokens = inputTokens, outputTokens = outputTokens, createdAt = createdAt,
         warning = warning, targetVariantId = targetVariantId, proposal = proposal, chosen = chosen,
-        costUsd = costUsd, retryAtMillis = retryAtMillis,
+        costUsd = costUsd, retryAtMillis = retryAtMillis, snapshotId = snapshotId, fixesIssues = fixesIssues,
     )
 
     private fun SuggestionEntity.toDomain() = Suggestion(

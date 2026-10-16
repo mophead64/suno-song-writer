@@ -5,7 +5,7 @@ APP_ID ?= app.sunosongwriter.debug
 EMULATOR := $(ANDROID_HOME)/emulator/emulator
 ADB      := $(ANDROID_HOME)/platform-tools/adb
 
-.PHONY: emu emu-cold wait install run logs test test-device lint build clean
+.PHONY: emu emu-cold wait install apk benchmark jank run logs test test-device lint build clean
 
 ## Boot the emulator in the background
 emu:
@@ -27,6 +27,20 @@ wait:
 install:
 	./gradlew installDebug
 	@$(ADB) shell monkey -p $(APP_ID) -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
+
+## Build a signed release APK to share: dist/SongWriter-<version>.apk (see scripts/build-apk.sh)
+apk:
+	@scripts/build-apk.sh
+
+## Build, install and launch the minified release build (debug-signed), for performance checks
+benchmark:
+	./gradlew installBenchmark
+	@$(ADB) shell monkey -p app.sunosongwriter.benchmark -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
+
+## Frame timing for the benchmark build since its last reset (scroll around first)
+jank:
+	@$(ADB) shell dumpsys gfxinfo app.sunosongwriter.benchmark | grep -E "Total frames|Janky frames|th percentile"
+	@$(ADB) shell dumpsys gfxinfo app.sunosongwriter.benchmark reset >/dev/null
 
 run: install
 

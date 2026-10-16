@@ -102,3 +102,36 @@ interface RequestCountDao {
     @Query("DELETE FROM request_count WHERE day < :beforeDay")
     suspend fun deleteBefore(beforeDay: String)
 }
+
+@Dao
+interface UsageDao {
+    @Insert
+    suspend fun insert(record: UsageRecordEntity): Long
+
+    @Query("SELECT * FROM usage_record WHERE at >= :from ORDER BY at")
+    fun observeSince(from: Long): Flow<List<UsageRecordEntity>>
+
+    @Query("SELECT COALESCE(SUM(costUsd), 0) FROM usage_record WHERE at >= :from")
+    suspend fun costSince(from: Long): Double
+
+    @Query("SELECT COALESCE(SUM(costUsd), 0) FROM usage_record WHERE at >= :from")
+    fun observeCostSince(from: Long): Flow<Double>
+
+    @Query("SELECT COALESCE(SUM(costUsd), 0) FROM usage_record WHERE sessionId = :sessionId")
+    suspend fun sessionCost(sessionId: Long): Double
+
+    @Query("SELECT COALESCE(SUM(costUsd), 0) FROM usage_record WHERE sessionId = :sessionId")
+    fun observeSessionCost(sessionId: Long): Flow<Double>
+
+    @Query("SELECT * FROM price_entry ORDER BY backendId, modelId")
+    fun observePrices(): Flow<List<PriceEntryEntity>>
+
+    @Query("SELECT * FROM price_entry WHERE backendId = :backendId AND modelId = :modelId")
+    suspend fun price(backendId: Long, modelId: String): PriceEntryEntity?
+
+    @Upsert
+    suspend fun upsertPrice(price: PriceEntryEntity)
+
+    @Query("DELETE FROM price_entry WHERE backendId = :backendId AND modelId = :modelId")
+    suspend fun deletePrice(backendId: Long, modelId: String)
+}

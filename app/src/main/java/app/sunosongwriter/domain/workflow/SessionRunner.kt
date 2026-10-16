@@ -5,6 +5,7 @@ import app.sunosongwriter.data.llm.ChatEvent
 import app.sunosongwriter.data.llm.ChatGateway
 import app.sunosongwriter.data.llm.ChatMessage
 import app.sunosongwriter.data.llm.LlmError
+import app.sunosongwriter.data.llm.UsageTag
 import app.sunosongwriter.data.repo.BackendRepository
 import app.sunosongwriter.data.repo.ParticipantRepository
 import app.sunosongwriter.data.repo.SessionRepository
@@ -26,6 +27,7 @@ import app.sunosongwriter.domain.review.ParsedContent.Part
 import app.sunosongwriter.domain.review.ReplyParser
 import app.sunosongwriter.domain.review.ReviewParser
 import app.sunosongwriter.domain.review.SuggestionGrouping
+import app.sunosongwriter.domain.results.FixContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -43,6 +45,8 @@ data class RunRequest(
     /** Null: use the default for this action and participant. */
     val templateKey: TemplateKey? = null,
     val instructions: String = "",
+    /** Fix from results: the sent snapshot whose results to fix (spec 5.13). */
+    val snapshotId: Long? = null,
 )
 
 class RunException(message: String) : Exception(message)
@@ -67,6 +71,8 @@ class SessionRunner(
     private val backends: BackendRepository,
     private val guide: () -> String,
     private val nowMillis: () -> Long = System::currentTimeMillis,
+    /** Fix from results: a snapshot and its logged results (spec 5.13). */
+    private val fixContext: suspend (snapshotId: Long) -> FixContext? = { null },
 ) {
     private val jobs = ConcurrentHashMap<Long, Job>()
     private val _settled = MutableSharedFlow<Long>(extraBufferCapacity = 64)
@@ -77,7 +83,7 @@ class SessionRunner(
     /** Manual mode: prepares a step in the variant's manual session and starts it. Returns the message id. */
     suspend fun start(request: RunRequest): Long {
         val session = sessions.getOrCreateManual(request.songId, request.variantId)
-        val messageId = prepare(session, request.action, request.participantId, request.templateKey, request.instructions)
+        val messageId = prepare(session, request.action, request.participantId, request.templateKey, request.instructions, snapshotId = request.snapshotId)
         if (sessions.message(messageId)?.status == MessageStatus.PENDING) launch(messageId)
         return messageId
     }
@@ -94,6 +100,9 @@ class SessionRunner(
         instructions: String = "",
         targetVariantId: Long? = null,
         proposal: Boolean = false,
+        snapshotId: Long? = null,
+        /** Chair decision: the numbered choices, for the template's `{{suggestions}}`. */
+        choices: String? = null,
     ): Long {
         val participant = participants.get(participantId) ?: throw RunException("That participant no longer exists.")
         val ref = participant.model ?: throw RunException("${participant.name} has no model. Pick one in Settings → Participants.")
@@ -102,12 +111,23 @@ class SessionRunner(
 
         val variantId = targetVariantId ?: session.variantId
         val song = songs.observeSong(session.songId).first() ?: throw RunException("Song not found.")
+        if (action == SessionAction.QUICK_START && song.concept.isBlank() && instructions.isBlank()) {
+            throw RunException("Write the idea first: Quick start turns it into a draft.")
+        }
         val current = songs.latest(variantId) ?: throw RunException("Variant not found.")
         val accepted = if (action == SessionAction.IMPLEMENT) {
             pendingAccepted(session.id).also { if (it.isEmpty()) throw RunException("Accept at least one suggestion first.") }
         } else {
             emptyList()
         }
+        // Fix works on exactly what was sent, plus what came back (spec 5.13).
+        val fix = if (action == SessionAction.FIX) {
+            val id = snapshotId ?: throw RunException("Fix from results starts from a sent snapshot.")
+            fixContext(id) ?: throw RunException("That snapshot no longer exists.")
+        } else {
+            null
+        }
+        if (fix != null && fix.results.isBlank()) throw RunException("Log at least one take first.")
         val template = templateKey?.let { templates.get(it) } ?: templates.resolve(action, participant.id)
         val prompt = TemplateRenderer.render(
             template.body,
@@ -116,11 +136,11 @@ class SessionRunner(
                 artist = song.artist,
                 tags = song.tags.joinToString(", "),
                 concept = song.concept,
-                style = current.content.style.flatText(),
-                lyrics = current.content.lyrics,
-                sliders = describeSettings(current.content.settings),
-                suggestions = SuggestionGrouping.describeForImplement(accepted),
-                results = "",
+                style = fix?.snapshot?.styleText ?: current.content.style.flatText(),
+                lyrics = fix?.snapshot?.lyricsText ?: current.content.lyrics,
+                sliders = describeSettings(fix?.snapshot?.settings ?: current.content.settings),
+                suggestions = choices ?: SuggestionGrouping.describeForImplement(accepted),
+                results = fix?.results.orEmpty(),
                 guide = if ("{{guide}}" in template.body.replace(" ", "")) guide() else "",
                 instructions = instructions.trim(),
             ),
@@ -138,9 +158,11 @@ class SessionRunner(
             instructions = instructions.trim().ifEmpty { null },
             prompt = prompt,
             status = if (backend.isRelay) MessageStatus.WAITING_RELAY else MessageStatus.PENDING,
-            basedOnVersionId = current.id,
+            basedOnVersionId = fix?.snapshot?.versionId?.takeIf { songs.version(it)?.variantId == variantId } ?: current.id,
             targetVariantId = targetVariantId,
             proposal = proposal,
+            snapshotId = fix?.snapshot?.id,
+            fixesIssues = fix?.issues?.joinToString(", ")?.ifEmpty { null },
         )
     }
 
@@ -272,9 +294,10 @@ class SessionRunner(
         val text = StringBuilder()
         var lastWrite = 0L
         val model = backends.resolve(ref)?.let { t -> "${t.model?.displayName ?: ref.modelId} · ${t.backend.name}" }
+        val tag = sessions.message(messageId)?.let { m -> UsageTag(sessions.get(m.sessionId)?.songId, m.sessionId, messageId) } ?: UsageTag(messageId = messageId)
         sessions.update(messageId) { it.copy(status = MessageStatus.STREAMING.name, modelLabel = model ?: it.modelLabel, content = "", error = null) }
         var failed: LlmError? = null
-        gateway.stream(ref, sent).collect { event ->
+        gateway.stream(ref, sent, tag = tag).collect { event ->
             when (event) {
                 is ChatEvent.Delta -> {
                     text.append(event.text)
@@ -318,6 +341,11 @@ class SessionRunner(
      * suggestions by hand.
      */
     private suspend fun handleReply(message: SessionMessage, retryReview: (suspend (String) -> String?)?) {
+        if (message.action == SessionAction.CHAIR) {
+            // The room reads the decision from the reply.
+            done(message) { it.copy(content = message.content) }
+            return
+        }
         if (message.action == SessionAction.REVIEW) {
             var reply = message.content
             var review = ReviewParser.parse(reply)
@@ -352,12 +380,29 @@ class SessionRunner(
         // Applied on top of the newest version, so edits made while the step ran aren't lost to an older base.
         val latest = songs.latest(variantId)?.content ?: base.content
         val content = merge(latest, parsed.content, parsed.changedParts)
-        val note = parsed.note ?: "${message.action.label} by ${message.participantName}"
+        val note = fixNote(message, parsed.note) ?: parsed.note ?: "${message.action.label} by ${message.participantName}"
         val version = songs.saveVersion(variantId, content, authorOf(message), note, step = message.action.label)
         if (message.action == SessionAction.IMPLEMENT && version != null) {
             sessions.markImplemented(pendingAccepted(session.id).map { it.id }, version.id)
         }
+        if (message.action == SessionAction.QUICK_START) fillSongDetails(session.songId, parsed.title, parsed.tags)
         done(message) { it.copy(producedVersionId = version?.id, error = if (version == null) "The reply didn't change anything." else null) }
+    }
+
+    /** Quick start names the song and tags its genre, but never overwrites what the user already set. */
+    private suspend fun fillSongDetails(songId: Long, title: String?, tags: List<String>) {
+        val song = songs.observeSong(songId).first() ?: return
+        val newTitle = title?.takeIf { song.title.isBlank() }
+        val newTags = tags.takeIf { song.tags.isEmpty() && it.isNotEmpty() }
+        if (newTitle == null && newTags == null) return
+        songs.updateSong(song.copy(title = newTitle ?: song.title, tags = newTags ?: song.tags))
+    }
+
+    /** Fix from results: the change note lists the issues it targets (spec 5.13). */
+    private fun fixNote(message: SessionMessage, modelNote: String?): String? {
+        if (message.action != SessionAction.FIX) return null
+        val issues = message.fixesIssues ?: "the notes from Suno"
+        return "Fixes $issues" + (modelNote?.let { ": $it" } ?: "")
     }
 
     private fun authorOf(message: SessionMessage) =

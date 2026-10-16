@@ -8,6 +8,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -22,6 +23,7 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -32,6 +34,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -56,6 +59,7 @@ import app.sunosongwriter.R
 import app.sunosongwriter.domain.model.LibraryFilter
 import app.sunosongwriter.domain.model.SongSummary
 import app.sunosongwriter.ui.appViewModel
+import app.sunosongwriter.ui.song.QuickStartDialog
 import app.sunosongwriter.ui.components.Tag
 import app.sunosongwriter.ui.components.TagRow
 import java.time.LocalDate
@@ -67,6 +71,12 @@ fun LibraryScreen(
     onNewSong: () -> Unit,
     onOpenFolders: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenRecipes: () -> Unit,
+    onOpenWinRates: () -> Unit,
+    onOpenGettingStarted: () -> Unit,
+    onOpenParticipants: () -> Unit,
+    /** A song just made by Quick generate, opened on its Team tab. */
+    onOpenNewSong: (Long) -> Unit,
 ) {
     val vm = appViewModel { c, _ -> LibraryViewModel(c) }
     val ui by vm.ui.collectAsStateWithLifecycle()
@@ -74,6 +84,8 @@ fun LibraryScreen(
     val message by vm.message.collectAsStateWithLifecycle()
     var searching by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
+    var quickGenerate by remember { mutableStateOf(false) }
+    val members by vm.members.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
 
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
@@ -102,7 +114,10 @@ fun LibraryScreen(
                     Box {
                         IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "More options") }
                         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                            DropdownMenuItem(text = { Text("Getting started") }, onClick = { menu = false; onOpenGettingStarted() })
                             DropdownMenuItem(text = { Text("Folders") }, onClick = { menu = false; onOpenFolders() })
+                            DropdownMenuItem(text = { Text("Recipes") }, onClick = { menu = false; onOpenRecipes() })
+                            DropdownMenuItem(text = { Text("Win rates") }, onClick = { menu = false; onOpenWinRates() })
                             DropdownMenuItem(
                                 text = { Text("Export library") },
                                 onClick = { menu = false; exportLauncher.launch("song-writer-library-${LocalDate.now()}.json") },
@@ -117,12 +132,21 @@ fun LibraryScreen(
             )
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = onNewSong,
-                modifier = Modifier.semantics { contentDescription = "New song" },
-                icon = { Icon(Icons.Filled.Add, null) },
-                text = { Text("New song") },
-            )
+            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                ExtendedFloatingActionButton(
+                    onClick = { quickGenerate = true },
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    modifier = Modifier.semantics { contentDescription = "Quick generate a song from an idea" },
+                    icon = { Icon(Icons.Filled.Star, null) },
+                    text = { Text("Quick generate") },
+                )
+                ExtendedFloatingActionButton(
+                    onClick = onNewSong,
+                    modifier = Modifier.semantics { contentDescription = "New song" },
+                    icon = { Icon(Icons.Filled.Add, null) },
+                    text = { Text("New song") },
+                )
+            }
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
@@ -148,16 +172,33 @@ fun LibraryScreen(
             when {
                 state.totalSongs == 0 -> EmptyState(
                     "No songs yet",
-                    "Tap New song to start one. Add backends and participants in Settings to bring in your production team.",
-                )
+                    "Quick generate turns a one-line idea into a draft, or tap New song to write one yourself. New here? Getting started walks you through setting up your team.",
+                ) {
+                    OutlinedButton(onClick = onOpenGettingStarted, modifier = Modifier.padding(top = 16.dp)) { Text("Getting started") }
+                }
                 state.songs.isEmpty() -> EmptyState("No matching songs", "Try a different search or clear the filters.")
-                else -> LazyColumn(Modifier.fillMaxSize()) {
-                    items(state.songs, key = { it.song.id }) { summary ->
+                // Bottom padding keeps the last songs clear of the two floating buttons.
+                else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 168.dp)) {
+                    items(state.songs, key = { it.song.id }, contentType = { "song" }) { summary ->
                         SongRow(summary, onClick = { onOpenSong(summary.song.id) })
                         HorizontalDivider()
                     }
                 }
             }
+        }
+    }
+
+    if (quickGenerate) {
+        QuickStartDialog(
+            members = members,
+            initialIdea = "",
+            newSong = true,
+            replacesContent = false,
+            onDismiss = { quickGenerate = false },
+            onOpenParticipants = { quickGenerate = false; onOpenParticipants() },
+        ) { request ->
+            quickGenerate = false
+            vm.quickGenerate(request, onOpenNewSong)
         }
     }
 }
@@ -242,7 +283,7 @@ private fun SongRow(summary: SongSummary, onClick: () -> Unit) {
 }
 
 @Composable
-private fun EmptyState(title: String, body: String) {
+private fun EmptyState(title: String, body: String, extra: @Composable () -> Unit = {}) {
     Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(title, style = MaterialTheme.typography.titleMedium)
@@ -252,6 +293,7 @@ private fun EmptyState(title: String, body: String) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 8.dp),
             )
+            extra()
         }
     }
 }

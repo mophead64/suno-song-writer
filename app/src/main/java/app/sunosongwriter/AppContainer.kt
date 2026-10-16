@@ -12,11 +12,14 @@ import app.sunosongwriter.data.presets.PresetRepository
 import app.sunosongwriter.data.repo.BackendRepository
 import app.sunosongwriter.data.repo.LibraryTransfer
 import app.sunosongwriter.data.repo.ParticipantRepository
+import app.sunosongwriter.data.repo.RecipeRepository
 import app.sunosongwriter.data.repo.RequestCountRepository
+import app.sunosongwriter.data.repo.ResultRepository
 import app.sunosongwriter.data.repo.SessionRepository
 import app.sunosongwriter.data.repo.SnapshotRepository
 import app.sunosongwriter.data.repo.SongRepository
 import app.sunosongwriter.data.repo.TemplateRepository
+import app.sunosongwriter.data.repo.UsageRepository
 import app.sunosongwriter.data.secure.KeystoreCipher
 import app.sunosongwriter.data.secure.SecretStore
 import app.sunosongwriter.data.settings.SettingsRepository
@@ -90,7 +93,7 @@ class AppContainer(val application: Application) {
     val guide: String by lazy { application.assets.open("suno-guide.txt").bufferedReader().use { it.readText() } }
 
     val runner by lazy {
-        SessionRunner(appScope, gateway, songs, sessions, templates, participants, backends, guide = { guide }, nowMillis = clock)
+        SessionRunner(appScope, gateway, songs, sessions, templates, participants, backends, guide = { guide }, nowMillis = clock, fixContext = results::fixContext)
     }
 
     /** Text shared into the app (relay replies, quick capture), waiting for the share screen. */
@@ -116,11 +119,17 @@ class AppContainer(val application: Application) {
 
     val snapshots by lazy { SnapshotRepository(database.snapshotDao(), json, clock) }
 
+    val results by lazy { ResultRepository(database, snapshots, clock) }
+
+    val recipes by lazy { RecipeRepository(database.recipeDao(), songs, json, clock) }
+
     val libraryTransfer by lazy { LibraryTransfer(database, songs, json, clock) }
 
     val requestCounts by lazy { RequestCountRepository(database.requestCountDao(), clock) }
 
     val quotas by lazy { QuotaTracker(clock) }
+
+    val usage by lazy { UsageRepository(database.usageDao(), settings.spendLimits, clock) }
 
     private val pacer by lazy { RequestPacer(clock) }
 
@@ -133,6 +142,7 @@ class AppContainer(val application: Application) {
             quotas = quotas,
             freeOnly = settings::isFreeOnly,
             nowMillis = clock,
+            ledger = usage,
         )
     }
 }

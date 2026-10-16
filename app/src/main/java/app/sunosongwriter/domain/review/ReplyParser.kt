@@ -5,8 +5,14 @@ import app.sunosongwriter.domain.model.StylePrompt
 import app.sunosongwriter.domain.model.SunoSettings
 import app.sunosongwriter.domain.prompt.SessionAction
 
-/** What a reply changed, applied over the version it was based on. */
-data class ParsedContent(val content: SongContent, val note: String?, val changedParts: Set<Part>) {
+/** What a reply changed, applied over the version it was based on. [title] and [tags] come from Quick start replies. */
+data class ParsedContent(
+    val content: SongContent,
+    val note: String?,
+    val changedParts: Set<Part>,
+    val title: String? = null,
+    val tags: List<String> = emptyList(),
+) {
     enum class Part { STYLE, LYRICS, SETTINGS }
 }
 
@@ -17,12 +23,12 @@ data class ParsedContent(val content: SongContent, val note: String?, val change
  * the action asked for (lyrics for Write lyrics, style for Write style).
  */
 object ReplyParser {
-    private enum class Heading { STYLE, LYRICS, SETTINGS, NOTE }
+    private enum class Heading { STYLE, LYRICS, SETTINGS, NOTE, TITLE, TAGS }
 
     private val headingLine = Regex(
         // The heading word must be followed by a colon or the end of the line, so "Style Influence: 90%"
         // or a lyric like "Notes on the breeze" isn't mistaken for a heading.
-        """^\s*(?:#{1,4}\s*)?\**\s*(style(?: prompt)?|lyrics|settings|sliders|suno settings|note|change note|notes)\s*\**\s*(?::\s*\**\s*(.*)|$)""",
+        """^\s*(?:#{1,4}\s*)?\**\s*(style(?: prompt)?|lyrics|settings|sliders|suno settings|note|change note|notes|title|song title|tags|genre tags|genres)\s*\**\s*(?::\s*\**\s*(.*)|$)""",
         RegexOption.IGNORE_CASE,
     )
 
@@ -32,6 +38,8 @@ object ReplyParser {
         val lyrics = parts[Heading.LYRICS]?.let(::clean)?.takeIf { it.isNotBlank() }
         val settings = parts[Heading.SETTINGS]?.let { parseSettings(it, base.settings) }
         val note = parts[Heading.NOTE]?.let(::clean)?.lines()?.firstOrNull { it.isNotBlank() }?.trim()
+        val title = parts[Heading.TITLE]?.let(::clean)?.lines()?.firstOrNull { it.isNotBlank() }?.trim()?.trim('"', '\u201c', '\u201d', '*')?.takeIf { it.isNotBlank() }
+        val tags = parts[Heading.TAGS]?.let(::clean)?.split(',', '\n')?.map { it.trim().trimStart('-', '*', '#', ' ').trim() }?.filter { it.isNotBlank() && it.length <= 40 }.orEmpty()
 
         var content = base
         val changed = mutableSetOf<ParsedContent.Part>()
@@ -57,7 +65,7 @@ object ReplyParser {
             }
         }
         if (changed.isEmpty()) return null
-        return ParsedContent(content, note, changed)
+        return ParsedContent(content, note, changed, title, tags.distinctBy { it.lowercase() }.take(6))
     }
 
     private fun split(reply: String): Map<Heading, String> {
@@ -67,6 +75,8 @@ object ReplyParser {
             val match = headingLine.find(line)
             val heading = match?.groupValues?.get(1)?.lowercase()?.let { word ->
                 when {
+                    word.endsWith("title") -> Heading.TITLE
+                    word == "tags" || word == "genre tags" || word == "genres" -> Heading.TAGS
                     word.startsWith("style") -> Heading.STYLE
                     word == "lyrics" -> Heading.LYRICS
                     word.contains("settings") || word == "sliders" -> Heading.SETTINGS

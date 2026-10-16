@@ -103,6 +103,49 @@ class MigrationTest {
         }
     }
 
+    @Test
+    fun migrate6To7AddsResultsRecipesAndFixColumns() {
+        helper.createDatabase(DB, 6).use { db ->
+            db.execSQL("INSERT INTO song (id, folderId, title, artist, concept, createdAt, updatedAt) VALUES (1, NULL, 't', 'a', '', 0, 0)")
+            db.execSQL("INSERT INTO snapshot (id, songId, versionId, versionLabel, styleText, lyricsText, settingsJson, sentAt) VALUES (1, 1, 1, 'Draft v1', 's', 'l', '{}', 0)")
+            db.execSQL("INSERT INTO variant (id, songId, name, createdAt) VALUES (1, 1, 'Draft', 0)")
+            db.execSQL("INSERT INTO session (id, songId, variantId, type, fullTranscript, createdAt) VALUES (1, 1, 1, 'manual', 0, 0)")
+            db.execSQL(
+                """
+                INSERT INTO session_message (id, sessionId, round, action, participantId, participantName, participantAvatar, modelLabel,
+                  templateKey, instructions, prompt, content, status, error, basedOnVersionId, producedVersionId, verdict, summary,
+                  parseFailed, inputTokens, outputTokens, createdAt, updatedAt)
+                VALUES (1, 1, 1, 'REVIEW', NULL, 'x', 'x', NULL, 'builtin:review', NULL, 'p', '', 'DONE', NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, 0, 0)
+                """.trimIndent(),
+            )
+        }
+
+        helper.runMigrationsAndValidate(DB, 7, true).use { db ->
+            db.query("SELECT snapshotId, fixesIssues FROM session_message WHERE id = 1").use { c ->
+                c.moveToFirst()
+                assertEquals(true, c.isNull(0))
+                assertEquals(true, c.isNull(1))
+            }
+            db.execSQL("INSERT INTO suno_result (id, snapshotId, takeIndex, link, rating, notes, createdAt, updatedAt) VALUES (1, 1, 1, NULL, 4, '', 0, 0)")
+            db.execSQL("INSERT INTO result_issue (resultId, tag) VALUES (1, 'lyrics-cut-off')")
+            db.execSQL("INSERT INTO song_winner (songId, variantName, snapshotId, markedAt) VALUES (1, 'Draft', 1, 0)")
+            db.execSQL("INSERT INTO recipe (name, snapshotId, songId, parentRecipeId, songTitle, artist, tagsJson, styleText, lyricsText, settingsJson, ratingAtSave, createdAt) VALUES ('Recipe 1', 1, 1, NULL, 't', 'a', '[]', 's', 'l', '{}', 4, 0)")
+            db.execSQL("INSERT INTO issue_fix (tag, fixText, builtIn, updatedAt) VALUES ('Robotic', '', 0, 0)")
+            db.query("SELECT COUNT(*) FROM result_issue").use { c -> c.moveToFirst(); assertEquals(1, c.getInt(0)) }
+        }
+    }
+
+    @Test
+    fun migrate7To8AddsUsageAndPrices() {
+        helper.createDatabase(DB, 7).close()
+
+        helper.runMigrationsAndValidate(DB, 8, true).use { db ->
+            db.execSQL("INSERT INTO usage_record (backendId, backendName, modelId, songId, sessionId, messageId, inputTokens, outputTokens, costUsd, costSource, at) VALUES (1, 'OpenRouter', 'm', NULL, NULL, NULL, 10, 5, 0.01, 'REPORTED', 0)")
+            db.execSQL("INSERT INTO price_entry (backendId, modelId, inputPerMTok, outputPerMTok, updatedAt) VALUES (1, 'm', 3.0, 15.0, 0)")
+            db.query("SELECT SUM(costUsd) FROM usage_record").use { c -> c.moveToFirst(); assertEquals(0.01, c.getDouble(0), 1e-9) }
+        }
+    }
+
     private companion object {
         const val DB = "migration-test"
     }

@@ -26,6 +26,9 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -69,6 +72,7 @@ import app.sunosongwriter.domain.model.Version
 import app.sunosongwriter.ui.appViewModel
 import app.sunosongwriter.ui.components.BackTopBar
 import app.sunosongwriter.ui.library.NameDialog
+import app.sunosongwriter.ui.results.stars
 import kotlin.math.roundToInt
 
 private enum class SongTab(val label: String) { STYLE("Style"), LYRICS("Lyrics"), SETTINGS("Settings"), TEAM("Team"), HISTORY("History") }
@@ -79,6 +83,7 @@ private sealed interface SongDialog {
     data object DeleteVariant : SongDialog
     data object SaveNote : SongDialog
     data object DiscardEdits : SongDialog
+    data object QuickStart : SongDialog
 }
 
 @Composable
@@ -86,13 +91,14 @@ fun SongScreen(
     onBack: () -> Unit,
     onOpenDetails: (Long) -> Unit,
     onCompare: (songId: Long, fromId: Long, toId: Long) -> Unit,
+    onSideBySide: (songId: Long, fromId: Long, toId: Long) -> Unit,
     onOpenParticipants: () -> Unit,
     onStartRoom: (songId: Long, variantId: Long) -> Unit,
     onOpenRoom: (Long) -> Unit,
     onHandoff: (songId: Long, versionId: Long) -> Unit,
-    onOpenSnapshot: (songId: Long, snapshotId: Long) -> Unit,
+    onOpenResults: (songId: Long, snapshotId: Long) -> Unit,
 ) {
-    val vm = appViewModel { c, saved -> SongViewModel(saved, c.songs, c.snapshots) }
+    val vm = appViewModel { c, saved -> SongViewModel(saved, c.songs, c.snapshots, c.results, c.recipes) }
     val snapshots by vm.snapshots.collectAsStateWithLifecycle()
     val team = appViewModel { c, saved -> TeamViewModel(saved, c) }
     val teamUi by team.ui.collectAsStateWithLifecycle()
@@ -100,7 +106,7 @@ fun SongScreen(
     val ui by vm.ui.collectAsStateWithLifecycle()
     val edit by vm.edit.collectAsStateWithLifecycle()
     val message by vm.message.collectAsStateWithLifecycle()
-    var tab by rememberSaveable { mutableIntStateOf(0) }
+    var tab by rememberSaveable { mutableIntStateOf(if (vm.openTeam) SongTab.TEAM.ordinal else 0) }
     var dialog by remember { mutableStateOf<SongDialog?>(null) }
     var menu by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
@@ -129,8 +135,17 @@ fun SongScreen(
                     Box {
                         IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "More options") }
                         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                            DropdownMenuItem(text = { Text("Quick start from the idea") }, onClick = { menu = false; dialog = SongDialog.QuickStart })
                             DropdownMenuItem(text = { Text("New variant") }, onClick = { menu = false; dialog = SongDialog.NewVariant })
                             DropdownMenuItem(text = { Text("Rename variant") }, onClick = { menu = false; dialog = SongDialog.RenameVariant })
+                            DropdownMenuItem(
+                                text = { Text("Variants side by side") },
+                                enabled = (ui?.variants?.size ?: 0) > 1,
+                                onClick = {
+                                    menu = false
+                                    vm.sideBySide { a, b -> onSideBySide(vm.songId, a, b) }
+                                },
+                            )
                             DropdownMenuItem(
                                 text = { Text("Delete variant") },
                                 enabled = (ui?.variants?.size ?: 0) > 1,
@@ -169,8 +184,8 @@ fun SongScreen(
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 val e = edit
                 when (SongTab.entries[tab]) {
-                    SongTab.STYLE -> if (e != null) StyleEditor(e, vm) else StyleView(state.current, onEdit = vm::startEdit)
-                    SongTab.LYRICS -> if (e != null) LyricsEditor(e, vm) else LyricsView(state.current, onEdit = vm::startEdit)
+                    SongTab.STYLE -> if (e != null) StyleEditor(e, vm) else StyleView(state.current, onEdit = vm::startEdit, onQuickStart = { dialog = SongDialog.QuickStart })
+                    SongTab.LYRICS -> if (e != null) LyricsEditor(e, vm) else LyricsView(state.current, onEdit = vm::startEdit, onQuickStart = { dialog = SongDialog.QuickStart })
                     SongTab.SETTINGS -> if (e != null) SettingsEditor(e.content.settings) { s -> vm.updateEdit { it.copy(content = it.content.copy(settings = s)) } } else SettingsView(state.current.content.settings)
                     SongTab.TEAM -> teamUi?.let { t ->
                         TeamTab(
@@ -182,7 +197,7 @@ fun SongScreen(
                         )
                     }
                     SongTab.HISTORY -> {
-                        SentList(snapshots, onOpen = { onOpenSnapshot(vm.songId, it) })
+                        SentList(snapshots, onOpen = { onOpenResults(vm.songId, it) })
                         History(state, onCompare = { v -> onCompare(vm.songId, v.parentVersionId ?: 0, v.id) })
                     }
                 }
@@ -213,6 +228,18 @@ fun SongScreen(
             confirmButton = { TextButton(onClick = { vm.cancelEdit(); dialog = null }) { Text("Discard") } },
             dismissButton = { TextButton(onClick = { dialog = null }) { Text("Keep editing") } },
         )
+        SongDialog.QuickStart -> QuickStartDialog(
+            members = teamUi?.members.orEmpty(),
+            initialIdea = ui?.song?.concept.orEmpty(),
+            newSong = false,
+            replacesContent = ui?.current?.content?.let { !it.style.isEmpty || it.lyrics.isNotBlank() } == true,
+            onDismiss = { dialog = null },
+            onOpenParticipants = { dialog = null; onOpenParticipants() },
+        ) { request ->
+            dialog = null
+            // The step streams on the Team tab.
+            team.quickStart(request) { tab = SongTab.TEAM.ordinal }
+        }
     }
 }
 
@@ -224,10 +251,10 @@ private fun versionLine(variant: String, v: Version): String {
 // Style
 
 @Composable
-private fun StyleView(version: Version, onEdit: () -> Unit) {
+private fun StyleView(version: Version, onEdit: () -> Unit, onQuickStart: () -> Unit) {
     val style = version.content.style
     if (style.isEmpty) {
-        EmptyTab("No style prompt yet.", onEdit)
+        EmptyTab("No style prompt yet.", onEdit, onQuickStart)
         return
     }
     if (style.freeText != null) {
@@ -280,10 +307,10 @@ private fun StyleEditor(edit: SongEdit, vm: SongViewModel) {
 // Lyrics
 
 @Composable
-private fun LyricsView(version: Version, onEdit: () -> Unit) {
+private fun LyricsView(version: Version, onEdit: () -> Unit, onQuickStart: () -> Unit) {
     val lyrics = version.content.lyrics
     if (lyrics.isBlank()) {
-        EmptyTab("No lyrics yet.", onEdit)
+        EmptyTab("No lyrics yet.", onEdit, onQuickStart)
         return
     }
     SelectionContainer { Text(lyrics, style = MaterialTheme.typography.bodyLarge) }
@@ -354,7 +381,7 @@ private fun PercentSetting(label: String, value: Int?, default: Int, hint: Strin
 @Composable
 private fun History(state: SongUi, onCompare: (Version) -> Unit) {
     Text(
-        "${state.variant.name} has ${state.history.size} versions. Tap one to see what changed.",
+        "${state.variant.name} has ${state.history.size} version${if (state.history.size == 1) "" else "s"}. Tap one to see what changed.",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
@@ -371,15 +398,27 @@ private fun History(state: SongUi, onCompare: (Version) -> Unit) {
     }
 }
 
-/** Snapshots of what was sent to Suno (spec 5.11), newest first. */
+/** Snapshots of what was sent to Suno (spec 5.11), newest first, with how they went (5.12). Tap for the results log. */
 @Composable
-private fun SentList(snapshots: List<app.sunosongwriter.domain.model.Snapshot>, onOpen: (Long) -> Unit) {
+private fun SentList(snapshots: List<SentSummary>, onOpen: (Long) -> Unit) {
     if (snapshots.isEmpty()) return
     Text("Sent to Suno", style = MaterialTheme.typography.titleMedium)
-    snapshots.forEach { s ->
+    snapshots.forEach { summary ->
+        val s = summary.snapshot
+        val sent = "Sent ${DateUtils.getRelativeTimeSpanString(s.sentAt, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS)}"
+        val results = when (summary.takes) {
+            0 -> "no results logged"
+            1 -> "1 take"
+            else -> "${summary.takes} takes"
+        } + (summary.bestRating?.let { " · best ${stars(it)}" } ?: "")
         ListItem(
-            headlineContent = { Text(s.versionLabel) },
-            supportingContent = { Text("Sent ${DateUtils.getRelativeTimeSpanString(s.sentAt, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS)}") },
+            headlineContent = { Text(s.versionLabel + if (summary.isWinner) " · ★ winner" else "") },
+            supportingContent = {
+                Column {
+                    Text("$sent · $results")
+                    summary.recipeName?.let { Text("Recipe: $it", color = MaterialTheme.colorScheme.primary) }
+                }
+            },
             trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null) },
             modifier = Modifier.clickable { onOpen(s.id) },
         )
@@ -389,9 +428,16 @@ private fun SentList(snapshots: List<app.sunosongwriter.domain.model.Snapshot>, 
 }
 
 @Composable
-private fun EmptyTab(text: String, onEdit: () -> Unit) {
+private fun EmptyTab(text: String, onEdit: () -> Unit, onQuickStart: () -> Unit) {
     Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    OutlinedButton(onClick = onEdit) { Text("Edit") }
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
+        Column(Modifier.padding(12.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Quick start", style = MaterialTheme.typography.titleSmall)
+            Text("Have a model turn your idea into a first draft, then refine it with your team.", style = MaterialTheme.typography.bodySmall)
+            Button(onClick = onQuickStart) { Text("Quick start") }
+        }
+    }
+    OutlinedButton(onClick = onEdit) { Text("Write it yourself") }
 }
 
 @Composable

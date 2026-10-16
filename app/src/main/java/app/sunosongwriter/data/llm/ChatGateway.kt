@@ -37,6 +37,9 @@ interface RequestCounter {
  * 4. per-minute pacing, staggering requests that share a backend
  * 5. 429 handling: wait (`Retry-After`, reset headers, or exponential back-off) and retry,
  *    emitting [ChatEvent.RateLimited] so the UI can say what's happening
+ *
+ * Paid requests are also refused once a spend limit is reached, and every finished request's usage is
+ * recorded in the [UsageLedger] (spec 5.17).
  */
 class ChatGateway(
     private val transport: ChatTransport,
@@ -47,8 +50,9 @@ class ChatGateway(
     private val freeOnly: suspend () -> Boolean,
     private val nowMillis: () -> Long = System::currentTimeMillis,
     private val maxRetries: Int = 3,
+    private val ledger: UsageLedger = UsageLedger.None,
 ) {
-    fun stream(ref: ModelRef, messages: List<ChatMessage>, options: ChatOptions = ChatOptions()): Flow<ChatEvent> = flow {
+    fun stream(ref: ModelRef, messages: List<ChatMessage>, options: ChatOptions = ChatOptions(), tag: UsageTag = UsageTag()): Flow<ChatEvent> = flow {
         val target = targets.resolve(ref)
         if (target == null) {
             emit(ChatEvent.Failed(LlmError.UnknownTarget(ref.modelId)))
@@ -59,13 +63,20 @@ class ChatGateway(
             emit(ChatEvent.Failed(LlmError.Unknown("${backend.name} is a relay participant: its replies come through the chat app, not an API.")))
             return@flow
         }
-        if (freeOnly() && !backend.isFree(ref.modelId, target.model?.pricedFree)) {
+        val isFree = backend.isFree(ref.modelId, target.model?.pricedFree)
+        if (freeOnly() && !isFree) {
             emit(ChatEvent.Failed(LlmError.PaidModelBlocked(ref.modelId)))
             return@flow
         }
         if (backend.needsKey && target.endpoint.apiKey.isNullOrBlank()) {
             emit(ChatEvent.Failed(LlmError.MissingKey))
             return@flow
+        }
+        if (!isFree) {
+            ledger.spendBlock(tag)?.let {
+                emit(ChatEvent.Failed(it))
+                return@flow
+            }
         }
         val limits = backend.limitsFor(ref.modelId, target.model?.pricedFree)
         quotaError(backend, ref.modelId, limits.rpd)?.let {
@@ -84,14 +95,21 @@ class ChatGateway(
 
             var retryAfter: Long? = null
             var sawContent = false
+            var usage: ChatEvent.Usage? = null
             transport.stream(target.endpoint, ref.modelId, messages, options).collect { event ->
                 when (event) {
                     is ChatEvent.Delta -> {
                         sawContent = true
                         emit(event)
                     }
+                    is ChatEvent.Usage -> {
+                        usage = event
+                        emit(event)
+                    }
                     is ChatEvent.Completed -> {
                         quotas.record(backend, ref.modelId, event.rateLimit)
+                        val u = usage
+                        ledger.record(UsageEvent(backend, ref.modelId, tag, u?.inputTokens, u?.outputTokens, u?.costUsd, isFree))
                         emit(event)
                     }
                     is ChatEvent.Failed -> {
@@ -158,5 +176,32 @@ class ChatGateway(
         const val BACKOFF_BASE_MILLIS = 2_000L
         const val MIN_WAIT_MILLIS = 500L
         const val MAX_WAIT_MILLIS = 120_000L
+    }
+}
+
+/** Who a request is for, so its usage is attributed to the song and session (spec 5.17). */
+data class UsageTag(val songId: Long? = null, val sessionId: Long? = null, val messageId: Long? = null)
+
+/** One finished request, as the gateway saw it. */
+data class UsageEvent(
+    val backend: Backend,
+    val modelId: String,
+    val tag: UsageTag,
+    val inputTokens: Int?,
+    val outputTokens: Int?,
+    val reportedCostUsd: Double?,
+    val isFree: Boolean,
+)
+
+/** Records usage and enforces spend limits. Implemented by the usage repository. */
+interface UsageLedger {
+    suspend fun record(event: UsageEvent)
+
+    /** Why a paid request may not be sent (a spend limit is reached), or null. */
+    suspend fun spendBlock(tag: UsageTag): LlmError?
+
+    object None : UsageLedger {
+        override suspend fun record(event: UsageEvent) = Unit
+        override suspend fun spendBlock(tag: UsageTag): LlmError? = null
     }
 }

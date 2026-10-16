@@ -4,9 +4,12 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.navigation.toRoute
+import app.sunosongwriter.data.repo.RecipeRepository
+import app.sunosongwriter.data.repo.ResultRepository
 import app.sunosongwriter.data.repo.SnapshotRepository
 import app.sunosongwriter.data.repo.SongRepository
 import app.sunosongwriter.domain.model.Author
+import app.sunosongwriter.domain.model.Snapshot
 import app.sunosongwriter.domain.model.Song
 import app.sunosongwriter.domain.model.SongContent
 import app.sunosongwriter.domain.model.StylePrompt
@@ -42,10 +45,38 @@ data class SongEdit(
         if (styleAsText) content.copy(style = StylePrompt.fromFreeText(styleText)) else content
 }
 
-class SongViewModel(savedState: SavedStateHandle, private val songs: SongRepository, snapshotRepo: SnapshotRepository) : ViewModel() {
-    val songId = savedState.toRoute<SongRoute>().songId
+/** A sent snapshot as listed on the History tab, with how it went (spec 5.12). */
+data class SentSummary(val snapshot: Snapshot, val takes: Int, val bestRating: Int?, val isWinner: Boolean, val recipeName: String?)
 
-    val snapshots = snapshotRepo.observeForSong(songId).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+class SongViewModel(
+    savedState: SavedStateHandle,
+    private val songs: SongRepository,
+    snapshotRepo: SnapshotRepository,
+    results: ResultRepository,
+    recipes: RecipeRepository,
+) : ViewModel() {
+    private val route = savedState.toRoute<SongRoute>()
+    val songId = route.songId
+    val openTeam = route.openTeam
+
+    val snapshots: StateFlow<List<SentSummary>> = combine(
+        snapshotRepo.observeForSong(songId),
+        results.observeTakesForSong(songId),
+        results.observeWinner(songId),
+        recipes.recipes,
+    ) { snapshots, takes, winner, recipes ->
+        val bySnapshot = takes.groupBy { it.snapshotId }
+        snapshots.map { s ->
+            val t = bySnapshot[s.id].orEmpty()
+            SentSummary(
+                snapshot = s,
+                takes = t.size,
+                bestRating = t.mapNotNull { it.rating }.maxOrNull(),
+                isWinner = winner?.snapshotId == s.id,
+                recipeName = recipes.firstOrNull { it.snapshotId == s.id }?.name,
+            )
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val selectedVariantId = MutableStateFlow<Long?>(null)
     private val _edit = MutableStateFlow<SongEdit?>(null)
@@ -111,6 +142,27 @@ class SongViewModel(savedState: SavedStateHandle, private val songs: SongReposit
     }
 
     // Variants
+
+    /**
+     * The newest versions of two variants to show side by side (spec 5.15): Consensus and
+     * Framework-refined when both exist, else the selected variant and the next one.
+     */
+    fun sideBySide(open: (fromId: Long, toId: Long) -> Unit) {
+        val state = ui.value ?: return
+        val variants = state.variants
+        val consensus = variants.firstOrNull { it.name == "Consensus" }
+        val refined = variants.firstOrNull { it.name == "Framework-refined" }
+        val (a, b) = if (consensus != null && refined != null) {
+            consensus to refined
+        } else {
+            state.variant to (variants.firstOrNull { it.id != state.variant.id } ?: return)
+        }
+        viewModelScope.launch {
+            val from = songs.latest(a.id) ?: return@launch
+            val to = songs.latest(b.id) ?: return@launch
+            open(from.id, to.id)
+        }
+    }
 
     fun createVariant(name: String, copyCurrent: Boolean) {
         val state = ui.value ?: return

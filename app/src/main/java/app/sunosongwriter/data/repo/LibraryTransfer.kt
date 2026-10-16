@@ -3,9 +3,13 @@ package app.sunosongwriter.data.repo
 import androidx.room.withTransaction
 import app.sunosongwriter.data.db.AppDatabase
 import app.sunosongwriter.data.db.FolderEntity
+import app.sunosongwriter.data.db.IssueFixEntity
+import app.sunosongwriter.data.db.RecipeEntity
 import app.sunosongwriter.data.db.SnapshotEntity
 import app.sunosongwriter.data.db.SongEntity
 import app.sunosongwriter.data.db.SongTagEntity
+import app.sunosongwriter.data.db.SongWinnerEntity
+import app.sunosongwriter.data.db.SunoResultEntity
 import app.sunosongwriter.data.db.VariantEntity
 import app.sunosongwriter.domain.model.Author
 import app.sunosongwriter.domain.model.AuthorType
@@ -22,6 +26,10 @@ data class LibraryExport(
     val exportedAt: Long,
     val folders: List<FolderDto>,
     val songs: List<SongDto>,
+    /** Absent in exports from before iteration 6. */
+    val recipes: List<RecipeDto> = emptyList(),
+    /** Edited built-in fixes and custom issue tags. */
+    val issueFixes: List<IssueFixDto> = emptyList(),
 ) {
     companion object {
         const val FORMAT = "song-writer-library"
@@ -33,6 +41,8 @@ data class FolderDto(val id: Long, val name: String)
 
 @Serializable
 data class SongDto(
+    /** Only for linking recipes on import. */
+    val id: Long = 0,
     val title: String,
     val artist: String,
     val concept: String,
@@ -43,17 +53,48 @@ data class SongDto(
     val variants: List<VariantDto>,
     /** What was sent to Suno (spec 5.11). Absent in exports from before iteration 5. */
     val snapshots: List<SnapshotDto> = emptyList(),
+    /** Which variant won (spec 5.12). */
+    val winner: WinnerDto? = null,
 )
 
 @Serializable
+data class WinnerDto(val variantName: String, val snapshotId: Long?)
+
+@Serializable
 data class SnapshotDto(
+    /** Only for linking takes, winners and recipes on import. */
+    val id: Long = 0,
     val versionId: Long,
     val versionLabel: String,
     val styleText: String,
     val lyricsText: String,
     val settings: SunoSettings,
     val sentAt: Long,
+    val takes: List<TakeDto> = emptyList(),
 )
+
+@Serializable
+data class TakeDto(val index: Int, val link: String?, val rating: Int?, val notes: String, val issues: List<String>, val createdAt: Long)
+
+@Serializable
+data class RecipeDto(
+    val id: Long,
+    val name: String,
+    val snapshotId: Long?,
+    val songId: Long?,
+    val parentRecipeId: Long?,
+    val songTitle: String,
+    val artist: String,
+    val tags: List<String>,
+    val styleText: String,
+    val lyricsText: String,
+    val settings: SunoSettings,
+    val ratingAtSave: Int?,
+    val createdAt: Long,
+)
+
+@Serializable
+data class IssueFixDto(val tag: String, val fixText: String, val builtIn: Boolean)
 
 @Serializable
 data class VariantDto(val name: String, val createdAt: Long, val versions: List<VersionDto>)
@@ -76,8 +117,9 @@ data class VersionDto(
 data class ImportResult(val songsAdded: Int, val songsSkipped: Int, val foldersAdded: Int)
 
 /**
- * JSON export and import of the whole library (spec section 7). Contains songs, folders, variants and
- * versions only: never API keys or backend settings. Participant links are dropped; author labels stay.
+ * JSON export and import of the whole library (spec section 7): songs, folders, variants, versions,
+ * snapshots and their results, winners, recipes and the issue-fix table. Never API keys or backend
+ * settings. Participant links are dropped; author labels stay.
  */
 class LibraryTransfer(
     private val db: AppDatabase,
@@ -89,9 +131,11 @@ class LibraryTransfer(
 
     suspend fun export(): String {
         val folders = db.folderDao().getAll().map { FolderDto(it.id, it.name) }
+        val resultDao = db.resultDao()
         val songDtos = db.songDao().getAll().map { song ->
             val versions = db.versionDao().versionsForSong(song.id).map(songs::toDomain)
             SongDto(
+                id = song.id,
                 title = song.title,
                 artist = song.artist,
                 concept = song.concept,
@@ -111,17 +155,31 @@ class LibraryTransfer(
                         },
                     )
                 },
-                snapshots = db.snapshotDao().forSong(song.id).map {
-                    SnapshotDto(it.versionId, it.versionLabel, it.styleText, it.lyricsText, json.decodeFromString(it.settingsJson), it.sentAt)
+                snapshots = db.snapshotDao().forSong(song.id).map { s ->
+                    SnapshotDto(
+                        s.id, s.versionId, s.versionLabel, s.styleText, s.lyricsText, json.decodeFromString(s.settingsJson), s.sentAt,
+                        takes = resultDao.forSnapshot(s.id).map { r ->
+                            TakeDto(r.result.takeIndex, r.result.link, r.result.rating, r.result.notes, r.issues.map { it.tag }, r.result.createdAt)
+                        },
+                    )
                 },
+                winner = resultDao.winner(song.id)?.let { WinnerDto(it.variantName, it.snapshotId) },
             )
         }
-        return pretty.encodeToString(LibraryExport(exportedAt = nowMillis(), folders = folders, songs = songDtos))
+        val recipes = db.recipeDao().getAll().map { r ->
+            RecipeDto(
+                r.id, r.name, r.snapshotId, r.songId, r.parentRecipeId, r.songTitle, r.artist, json.decodeFromString(r.tagsJson),
+                r.styleText, r.lyricsText, json.decodeFromString(r.settingsJson), r.ratingAtSave, r.createdAt,
+            )
+        }
+        val fixes = resultDao.fixes().map { IssueFixDto(it.tag, it.fixText, it.builtIn) }
+        return pretty.encodeToString(LibraryExport(exportedAt = nowMillis(), folders = folders, songs = songDtos, recipes = recipes, issueFixes = fixes))
     }
 
     /**
      * Adds the exported songs to the library. Folders are matched by name. A song with the same title,
-     * artist and creation time as an existing one is skipped, so importing the same file twice is harmless.
+     * artist and creation time as an existing one is skipped, so importing the same file twice is harmless;
+     * so is a recipe with the same name and creation time. Custom fixes only fill tags not already set.
      */
     suspend fun import(text: String): ImportResult {
         val export = json.decodeFromString<LibraryExport>(text)
@@ -141,11 +199,17 @@ class LibraryTransfer(
                 })
             }
 
-            val existingKeys = songDao.getAll().mapTo(HashSet()) { Triple(it.title, it.artist, it.createdAt) }
+            val resultDao = db.resultDao()
+            val existingSongs = songDao.getAll().associate { Triple(it.title, it.artist, it.createdAt) to it.id }
+            val existingKeys = existingSongs.keys.toHashSet()
+            val songIds = HashMap<Long, Long>()
+            val snapshotIds = HashMap<Long, Long>()
             var added = 0
             var skipped = 0
             for (dto in export.songs) {
-                if (!existingKeys.add(Triple(dto.title, dto.artist, dto.createdAt))) {
+                val key = Triple(dto.title, dto.artist, dto.createdAt)
+                if (!existingKeys.add(key)) {
+                    existingSongs[key]?.let { songIds[dto.id] = it }
                     skipped++
                     continue
                 }
@@ -171,18 +235,53 @@ class LibraryTransfer(
                 for ((id, oldParent) in pendingParents) {
                     newIds[oldParent]?.let { versionDao.setParent(id, it) }
                 }
+                songIds[dto.id] = songId
                 for (s in dto.snapshots) {
-                    db.snapshotDao().insert(
+                    val snapshotId = db.snapshotDao().insert(
                         SnapshotEntity(
                             songId = songId, versionId = newIds[s.versionId] ?: 0, versionLabel = s.versionLabel,
                             styleText = s.styleText, lyricsText = s.lyricsText, settingsJson = json.encodeToString(s.settings), sentAt = s.sentAt,
                         ),
                     )
+                    snapshotIds[s.id] = snapshotId
+                    for (t in s.takes) {
+                        val resultId = resultDao.insert(
+                            SunoResultEntity(
+                                snapshotId = snapshotId, takeIndex = t.index, link = t.link, rating = t.rating, notes = t.notes,
+                                createdAt = t.createdAt, updatedAt = t.createdAt,
+                            ),
+                        )
+                        resultDao.replaceIssues(resultId, t.issues)
+                    }
                 }
+                dto.winner?.let { w -> resultDao.setWinner(SongWinnerEntity(songId, w.variantName, w.snapshotId?.let(snapshotIds::get), nowMillis())) }
                 songs.reindex(songId)
                 added++
             }
+            importRecipes(export.recipes, songIds, snapshotIds)
+            val existingFixes = resultDao.fixes().map { it.tag }.toSet()
+            export.issueFixes.filter { it.tag !in existingFixes }.forEach { f ->
+                resultDao.upsertFix(IssueFixEntity(f.tag, f.fixText, f.builtIn, nowMillis()))
+            }
             ImportResult(added, skipped, foldersAdded)
+        }
+    }
+
+    /** Oldest first, so an adapted recipe's original already has its new id. */
+    private suspend fun importRecipes(recipes: List<RecipeDto>, songIds: Map<Long, Long>, snapshotIds: Map<Long, Long>) {
+        val dao = db.recipeDao()
+        val existing = dao.getAll().mapTo(HashSet()) { it.name to it.createdAt }
+        val recipeIds = HashMap<Long, Long>()
+        for (r in recipes.sortedBy { it.createdAt }) {
+            if (!existing.add(r.name to r.createdAt)) continue
+            recipeIds[r.id] = dao.insert(
+                RecipeEntity(
+                    name = r.name, snapshotId = r.snapshotId?.let(snapshotIds::get), songId = r.songId?.let(songIds::get),
+                    parentRecipeId = r.parentRecipeId?.let(recipeIds::get), songTitle = r.songTitle, artist = r.artist,
+                    tagsJson = json.encodeToString(r.tags), styleText = r.styleText, lyricsText = r.lyricsText,
+                    settingsJson = json.encodeToString(r.settings), ratingAtSave = r.ratingAtSave, createdAt = r.createdAt,
+                ),
+            )
         }
     }
 }

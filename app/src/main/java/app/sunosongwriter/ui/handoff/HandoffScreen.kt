@@ -132,7 +132,7 @@ class HandoffViewModel(savedState: SavedStateHandle, private val c: AppContainer
 }
 
 @Composable
-fun HandoffScreen(onBack: () -> Unit) {
+fun HandoffScreen(onBack: () -> Unit, onOpenResults: (songId: Long, snapshotId: Long) -> Unit) {
     val vm = appViewModel { c, saved -> HandoffViewModel(saved, c) }
     val ui by vm.ui.collectAsStateWithLifecycle()
     val message by vm.message.collectAsStateWithLifecycle()
@@ -189,6 +189,7 @@ fun HandoffScreen(onBack: () -> Unit) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 val installed = remember { context.packageManager.getLaunchIntentForPackage(SUNO_PACKAGE) != null }
                 OutlinedButton(onClick = { openSuno(context) }) { Text(if (installed) "Open Suno" else "Get Suno") }
+                state.snapshot?.let { s -> Button(onClick = { onOpenResults(s.songId, s.id) }) { Text("Log results") } }
                 if (state.snapshot == null) {
                     if (state.sentBefore.isEmpty()) {
                         Button(onClick = vm::markSent) { Text("Mark as sent") }

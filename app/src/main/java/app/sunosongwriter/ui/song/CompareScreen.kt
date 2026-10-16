@@ -18,6 +18,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -38,6 +41,8 @@ import androidx.lifecycle.viewModelScope
 import androidx.navigation.toRoute
 import app.sunosongwriter.data.repo.SongRepository
 import app.sunosongwriter.domain.diff.ContentDiff
+import app.sunosongwriter.domain.diff.SideBySide
+import app.sunosongwriter.domain.diff.SideBySideContent
 import app.sunosongwriter.domain.diff.TextDiff
 import app.sunosongwriter.domain.model.SongContent
 import app.sunosongwriter.domain.model.Version
@@ -45,6 +50,7 @@ import app.sunosongwriter.ui.CompareRoute
 import app.sunosongwriter.ui.appViewModel
 import app.sunosongwriter.ui.components.BackTopBar
 import app.sunosongwriter.ui.components.ContentDiffView
+import app.sunosongwriter.ui.components.SideBySideView
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
@@ -60,11 +66,13 @@ data class CompareUi(
     val from: VersionChoice?,
     val to: VersionChoice,
     val diff: ContentDiff,
+    val sideBySide: SideBySideContent,
 )
 
 class CompareViewModel(savedState: SavedStateHandle, private val songs: SongRepository) : ViewModel() {
     private val route = savedState.toRoute<CompareRoute>()
     private val selection = MutableStateFlow(route.fromId to route.toId)
+    val sideBySide = MutableStateFlow(route.sideBySide)
     private val _message = MutableStateFlow<String?>(null)
     val message = _message.asStateFlow()
 
@@ -76,7 +84,8 @@ class CompareViewModel(savedState: SavedStateHandle, private val songs: SongRepo
             .map { v -> VersionChoice(v, "${names[v.variantId] ?: "?"} v${v.number}", latest[v.variantId] == v.number) }
         val to = choices.firstOrNull { it.version.id == toId } ?: choices.firstOrNull() ?: return@combine null
         val from = choices.firstOrNull { it.version.id == fromId }
-        CompareUi(choices, from, to, TextDiff.content(from?.version?.content ?: SongContent(), to.version.content))
+        val old = from?.version?.content ?: SongContent()
+        CompareUi(choices, from, to, TextDiff.content(old, to.version.content), SideBySide.content(old, to.version.content))
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     fun setFrom(id: Long) = selection.value.let { selection.value = id to it.second }
@@ -98,10 +107,11 @@ fun CompareScreen(onBack: () -> Unit) {
     val vm = appViewModel { c, saved -> CompareViewModel(saved, c.songs) }
     val ui by vm.ui.collectAsStateWithLifecycle()
     val message by vm.message.collectAsStateWithLifecycle()
+    val sideBySide by vm.sideBySide.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.clearMessage() } }
 
-    Scaffold(topBar = { BackTopBar("Compare versions", onBack) }, snackbarHost = { SnackbarHost(snackbar) }) { padding ->
+    Scaffold(topBar = { BackTopBar(if (sideBySide) "Side by side" else "Compare versions", onBack) }, snackbarHost = { SnackbarHost(snackbar) }) { padding ->
         val state = ui ?: return@Scaffold
         Column(
             Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
@@ -120,8 +130,16 @@ fun CompareScreen(onBack: () -> Unit) {
             state.to.version.changeNote.takeIf { it.isNotBlank() }?.let {
                 Text("${state.to.label}: $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                SegmentedButton(selected = !sideBySide, onClick = { vm.sideBySide.value = false }, shape = SegmentedButtonDefaults.itemShape(0, 2)) { Text("Changes") }
+                SegmentedButton(selected = sideBySide, onClick = { vm.sideBySide.value = true }, shape = SegmentedButtonDefaults.itemShape(1, 2)) { Text("Side by side") }
+            }
             HorizontalDivider()
-            ContentDiffView(state.diff, Modifier.fillMaxWidth())
+            if (sideBySide) {
+                SideBySideView(state.sideBySide, state.from?.label ?: "Empty", state.to.label, Modifier.fillMaxWidth())
+            } else {
+                ContentDiffView(state.diff, Modifier.fillMaxWidth())
+            }
         }
     }
 }

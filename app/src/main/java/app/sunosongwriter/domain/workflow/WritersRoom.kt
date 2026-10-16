@@ -4,6 +4,8 @@ import app.sunosongwriter.data.repo.SessionRepository
 import app.sunosongwriter.data.repo.SongRepository
 import app.sunosongwriter.domain.prompt.SessionAction
 import app.sunosongwriter.domain.review.Decision
+import app.sunosongwriter.domain.review.SuggestionGroup
+import app.sunosongwriter.domain.review.SuggestionGrouping
 import app.sunosongwriter.domain.review.Verdict
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
@@ -24,6 +26,12 @@ data class RoomConfig(
     /** Runs Finalise into a `Framework-refined` variant; null skips it. */
     val finaliserId: Long?,
     val roundCap: Int = 3,
+    /** Who decides at the style pick and after each review round (Q2 default: you). */
+    val chair: ChairMode = ChairMode.YOU,
+    /** Automatic chair: suggestions backed by at least this many reviewers are accepted. */
+    val autoAcceptBackers: Int = 2,
+    /** Chair mode [ChairMode.MODEL]: the participant who decides. */
+    val chairId: Long? = null,
 )
 
 @Serializable
@@ -57,6 +65,10 @@ data class RoomState(
     val stepIds: List<Long> = emptyList(),
     val pause: RoomPause? = null,
     val endedBecause: String? = null,
+    /** A chair participant's decision step at the current chair stage. */
+    val chairStepId: Long? = null,
+    /** What the chair (automatic or a participant) decided last, for the transcript. */
+    val lastChairNote: String? = null,
 )
 
 /** What the room is waiting on after [WritersRoom.advance]. */
@@ -138,7 +150,11 @@ class WritersRoom(
             val who = failed.joinToString { it.participantName }
             return pause(sessionId, state, "$who couldn't finish: ${failed.first().error ?: "unknown error"}", resumeAt)
         }
-        if (state.stage.waitsForChair) return RoomStatus.WaitingForChair
+        if (state.stage.waitsForChair) {
+            val decided = decideForChair(session, config, state) ?: return chairStatus(sessionId)
+            save(sessionId, decided)
+            return advanceLocked(sessionId, depth + 1)
+        }
 
         // Every step settled: on to the next stage.
         state = transition(session, config, state)
@@ -167,7 +183,7 @@ class WritersRoom(
             RoomStage.LYRICS -> if (config.proposeStyles) RoomStage.STYLE_PROPOSALS else RoomStage.REVIEW
             RoomStage.STYLE_PROPOSALS -> {
                 val usable = state.stepIds.mapNotNull { sessions.message(it) }.any { it.status == MessageStatus.DONE }
-                if (usable) return state.copy(stage = RoomStage.STYLE_PICK) // keep the proposals as the stage's steps
+                if (usable) return state.copy(stage = RoomStage.STYLE_PICK, chairStepId = null) // keep the proposals as the stage's steps
                 RoomStage.REVIEW
             }
             RoomStage.REVIEW -> {
@@ -177,7 +193,7 @@ class WritersRoom(
                 if (allApprove) {
                     return state.copy(stage = RoomStage.FINALISE, stepIds = emptyList(), endedBecause = "Everyone approved in round ${state.round}.")
                 }
-                return state.copy(stage = RoomStage.REVIEW_DECISION) // keep the reviews as the stage's steps
+                return state.copy(stage = RoomStage.REVIEW_DECISION, chairStepId = null) // keep the reviews as the stage's steps
             }
             RoomStage.IMPLEMENT -> {
                 if (state.round >= config.roundCap) {
@@ -194,16 +210,116 @@ class WritersRoom(
     // Chair actions (spec 5.5: the chair decides; the user by default).
 
     /** Adopts a style proposal ([messageId]), or keeps the current style (null), then starts reviewing. */
-    suspend fun pickStyle(sessionId: Long, messageId: Long?) = chairAction(sessionId, RoomStage.STYLE_PICK) { state ->
-        messageId?.let { runner.adoptProposal(it) }
-        state.copy(stage = RoomStage.REVIEW, stepIds = emptyList())
-    }
+    suspend fun pickStyle(sessionId: Long, messageId: Long?) = chairAction(sessionId, RoomStage.STYLE_PICK) { state -> applyStylePick(state, messageId) }
 
     /** Implements the accepted suggestions; with none accepted, this round counts as the end of the debate. */
-    suspend fun implementAccepted(sessionId: Long) = chairAction(sessionId, RoomStage.REVIEW_DECISION) { state ->
+    suspend fun implementAccepted(sessionId: Long) = chairAction(sessionId, RoomStage.REVIEW_DECISION) { state -> applyImplement(sessionId, state) }
+
+    /** The user takes the chair back (or hands it over) mid-run. A pending chair step is left as it is. */
+    suspend fun setChair(sessionId: Long, mode: ChairMode) = mutex.withLock {
+        val session = sessions.get(sessionId) ?: return@withLock
+        sessions.setConfig(sessionId, json.encodeToString(config(session).copy(chair = mode)))
+    }
+
+    private suspend fun applyStylePick(state: RoomState, messageId: Long?): RoomState {
+        messageId?.let { runner.adoptProposal(it) }
+        return state.copy(stage = RoomStage.REVIEW, stepIds = emptyList(), chairStepId = null)
+    }
+
+    private suspend fun applyImplement(sessionId: Long, state: RoomState): RoomState {
         val accepted = sessions.suggestions(sessionId).count { it.decision == Decision.ACCEPTED && it.implementedInVersionId == null }
-        if (accepted == 0) state.copy(stage = RoomStage.FINALISE, stepIds = emptyList(), endedBecause = "The chair accepted no changes in round ${state.round}.")
-        else state.copy(stage = RoomStage.IMPLEMENT, stepIds = emptyList())
+        return if (accepted == 0) state.copy(stage = RoomStage.FINALISE, stepIds = emptyList(), chairStepId = null, endedBecause = "The chair accepted no changes in round ${state.round}.")
+        else state.copy(stage = RoomStage.IMPLEMENT, stepIds = emptyList(), chairStepId = null)
+    }
+
+    /** The current round's suggestions, grouped as the chair sees them. */
+    private suspend fun roundGroups(sessionId: Long, state: RoomState) =
+        SuggestionGrouping.group(sessions.suggestions(sessionId).filter { it.messageId in state.stepIds && it.implementedInVersionId == null })
+
+    /** What a chair stage is waiting on: the user, or a chair participant's step (which may need running). */
+    private suspend fun chairStatus(sessionId: Long): RoomStatus {
+        val state = state(sessions.get(sessionId) ?: return RoomStatus.Over)
+        state.pause?.let { return RoomStatus.Paused(it) }
+        val step = state.chairStepId?.let { sessions.message(it) } ?: return RoomStatus.WaitingForChair
+        return when {
+            step.status.isActive -> RoomStatus.Run(listOf(step.id))
+            step.status == MessageStatus.WAITING_RELAY -> RoomStatus.WaitingForRelay
+            step.status == MessageStatus.FAILED -> pause(sessionId, state, "${step.participantName} couldn't decide as chair: ${step.error ?: "unknown error"}", step.retryAtMillis)
+            else -> RoomStatus.WaitingForChair
+        }
+    }
+
+    /**
+     * Makes the chair's decision when the chair isn't the user (spec 5.5, auto chair). Returns the new
+     * state, or null to wait: for the user, or for a chair participant's step still running.
+     */
+    private suspend fun decideForChair(session: Session, config: RoomConfig, state: RoomState): RoomState? = when (config.chair) {
+        ChairMode.YOU -> null
+        ChairMode.AUTO -> decideAutomatically(session.id, config, state)
+        ChairMode.MODEL -> decideByParticipant(session, config, state)
+    }
+
+    private suspend fun decideAutomatically(sessionId: Long, config: RoomConfig, state: RoomState): RoomState {
+        val steps = state.stepIds.mapNotNull { sessions.message(it) }.filter { it.status == MessageStatus.DONE }
+        return when (state.stage) {
+            RoomStage.STYLE_PICK -> {
+                val pick = ChairRules.mostDetailedProposal(steps)
+                val name = steps.firstOrNull { it.id == pick }?.participantName
+                applyStylePick(state, pick).copy(lastChairNote = name?.let { "Automatic chair picked $it's style, the most detailed." } ?: "Automatic chair kept the current style.")
+            }
+            else -> {
+                val groups = roundGroups(sessionId, state)
+                val needed = ChairRules.backersNeeded(config.autoAcceptBackers, steps.size)
+                decideSuggestions(sessionId, groups, ChairRules.autoAccept(groups, needed))
+                val accepted = groups.count { g -> sessions.suggestions(sessionId).firstOrNull { it.id == g.lead.id }?.decision == Decision.ACCEPTED }
+                applyImplement(sessionId, state).copy(lastChairNote = "Automatic chair accepted $accepted of ${groups.size} suggestions (backed by at least $needed).")
+            }
+        }
+    }
+
+    /** A chair participant decides through a step; an unreadable reply leaves the decision to the user. */
+    private suspend fun decideByParticipant(session: Session, config: RoomConfig, state: RoomState): RoomState? {
+        val chairId = config.chairId ?: return null
+        val steps = state.stepIds.mapNotNull { sessions.message(it) }.filter { it.status == MessageStatus.DONE }
+        val proposals = steps.takeIf { state.stage == RoomStage.STYLE_PICK }.orEmpty()
+        val groups = if (state.stage == RoomStage.REVIEW_DECISION) roundGroups(session.id, state) else emptyList()
+        if (state.stage == RoomStage.REVIEW_DECISION && groups.isEmpty()) return applyImplement(session.id, state)
+        val stepId = state.chairStepId ?: run {
+            val choices = if (state.stage == RoomStage.STYLE_PICK) ChairRules.describeProposals(proposals) else ChairRules.describeSuggestions(groups)
+            val id = try {
+                runner.prepare(session, SessionAction.CHAIR, chairId, choices = choices)
+            } catch (e: RunException) {
+                save(session.id, state.copy(pause = RoomPause("The chair couldn't start: ${e.message}")))
+                return null
+            }
+            save(session.id, state.copy(chairStepId = id))
+            return null // the worker runs the step, then advances again
+        }
+        val step = sessions.message(stepId) ?: return null
+        if (step.status != MessageStatus.DONE) return null
+        val decision = ChairParser.parse(step.content)
+        if (decision == null) {
+            if (step.error == null) sessions.update(stepId) { it.copy(error = "Couldn't read the chair's decision. Decide yourself below.") }
+            return null
+        }
+        return when (state.stage) {
+            RoomStage.STYLE_PICK -> {
+                val chosen = decision.pick?.let { proposals.getOrNull(it - 1) }
+                applyStylePick(state, chosen?.id).copy(lastChairNote = "${step.participantName} picked ${chosen?.let { "${it.participantName}'s style" } ?: "the current style"}.")
+            }
+            else -> {
+                val accepted = decision.accept.orEmpty().mapNotNull { groups.getOrNull(it - 1) }
+                decideSuggestions(session.id, groups, accepted)
+                applyImplement(session.id, state).copy(lastChairNote = "${step.participantName} accepted ${accepted.size} of ${groups.size} suggestions.")
+            }
+        }
+    }
+
+    /** Accepts [accept] and rejects the other undecided groups. Groups the user already decided keep their decision. */
+    private suspend fun decideSuggestions(sessionId: Long, groups: List<SuggestionGroup>, accept: List<SuggestionGroup>) {
+        val pending = groups.filter { it.decision == Decision.PENDING }
+        sessions.decide(pending.filter { it in accept }.flatMap { it.ids }, Decision.ACCEPTED)
+        sessions.decide(pending.filter { it !in accept }.flatMap { it.ids }, Decision.REJECTED)
     }
 
     /** Ends the debate and goes straight to Finalise. */
@@ -218,7 +334,7 @@ class WritersRoom(
     suspend fun resume(sessionId: Long) = mutex.withLock {
         val session = sessions.get(sessionId) ?: return@withLock
         val state = state(session)
-        state.stepIds.mapNotNull { sessions.message(it) }.filter { it.status == MessageStatus.FAILED }.forEach { runner.retry(it.id) }
+        (state.stepIds + listOfNotNull(state.chairStepId)).mapNotNull { sessions.message(it) }.filter { it.status == MessageStatus.FAILED }.forEach { runner.retry(it.id) }
         save(sessionId, state.copy(pause = null))
     }
 
@@ -260,6 +376,7 @@ class WritersRoom(
             config.reviewerIds.forEach { add(it, config.roundCap + if (config.proposeStyles) 1 else 0) }
             add(config.implementerId, config.roundCap)
             add(config.finaliserId, 1)
+            if (config.chair == ChairMode.MODEL) add(config.chairId, config.roundCap + if (config.proposeStyles) 1 else 0)
             return counts
         }
     }

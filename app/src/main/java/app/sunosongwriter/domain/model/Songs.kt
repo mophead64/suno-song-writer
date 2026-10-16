@@ -76,8 +76,23 @@ data class Version(
     val createdAt: Long,
 )
 
-/** Library list status (spec 5.3). Results and recipe arrive in iteration 6. */
-enum class SongStatus(val label: String) { DRAFT("Draft"), SENT("Sent") }
+/** Library list status (spec 5.3): the furthest the song has got. */
+enum class SongStatus(val label: String) {
+    DRAFT("Draft"),
+    SENT("Sent"),
+    HAS_RESULTS("Results"),
+    RECIPE("Recipe"),
+    ;
+
+    companion object {
+        fun of(sent: Boolean, hasResults: Boolean, isRecipe: Boolean): SongStatus = when {
+            isRecipe -> RECIPE
+            hasResults -> HAS_RESULTS
+            sent -> SENT
+            else -> DRAFT
+        }
+    }
+}
 
 /** What was copied into Suno, frozen (spec 5.11). */
 data class Snapshot(
@@ -114,4 +129,19 @@ data class LibraryFilter(
     companion object {
         const val UNFILED = -1L
     }
+}
+
+/** Text shared into the app (spec 5.16). */
+object QuickCapture {
+    /** A song's concept with shared text added as a new paragraph. */
+    fun appendToConcept(concept: String, addition: String): String =
+        if (concept.isBlank()) addition.trim() else concept.trimEnd() + "\n\n" + addition.trim()
+
+    /** A title for a new song from shared text: its first line, shortened. */
+    fun titleFrom(text: String): String =
+        text.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() }?.let { if (it.length > 60) it.take(57).trimEnd() + "…" else it } ?: "Shared idea"
+
+    /** Suno links in shared text, e.g. from Suno's own share button. */
+    fun sunoLinks(text: String): List<String> =
+        Regex("""https?://(?:www\.)?suno\.(?:com|ai)/\S+""").findAll(text).map { it.value.trimEnd('.', ',', ')', '"', '\'') }.distinct().toList()
 }

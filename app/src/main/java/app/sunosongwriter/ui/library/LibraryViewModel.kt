@@ -8,6 +8,9 @@ import app.sunosongwriter.domain.model.Folder
 import app.sunosongwriter.domain.model.LibraryFilter
 import app.sunosongwriter.domain.model.SongStatus
 import app.sunosongwriter.domain.model.SongSummary
+import app.sunosongwriter.ui.song.QuickStartRequest
+import app.sunosongwriter.ui.song.observeTeam
+import app.sunosongwriter.ui.song.quickGenerate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
@@ -45,12 +48,17 @@ class LibraryViewModel(private val c: AppContainer) : ViewModel() {
     private val searchHits = combine(_filter.map { it.query }.distinctUntilChanged().debounce(200), c.songs.songs) { q, _ -> q }
         .mapLatest { query -> if (query.isBlank()) null else c.songs.search(query).orEmpty() }
 
-    val ui: StateFlow<LibraryUi?> = combine(c.songs.songs, c.songs.folders, _filter, searchHits, c.snapshots.sentSongIds) { songs, folders, filter, hits, sent ->
+    /** Song ids that have been sent, have results, have a recipe. */
+    private val progress = combine(c.snapshots.sentSongIds, c.results.songIdsWithResults, c.recipes.songIds) { sent, results, recipes ->
+        Triple(sent, results, recipes)
+    }
+
+    val ui: StateFlow<LibraryUi?> = combine(c.songs.songs, c.songs.folders, _filter, searchHits, progress) { songs, folders, filter, hits, (sent, results, recipes) ->
         val folderNames = folders.associate { it.id to it.name }
         LibraryUi(
             songs = songs
                 .filter { filter.matches(it) && (hits == null || it.id in hits) }
-                .map { SongSummary(it, it.folderId?.let(folderNames::get), if (it.id in sent) SongStatus.SENT else SongStatus.DRAFT) },
+                .map { SongSummary(it, it.folderId?.let(folderNames::get), SongStatus.of(it.id in sent, it.id in results, it.id in recipes)) },
             totalSongs = songs.size,
             folders = folders,
             artists = songs.map { it.artist }.filter { it.isNotBlank() }.distinctBy { it.lowercase() }.sortedBy { it.lowercase() },
@@ -58,7 +66,16 @@ class LibraryViewModel(private val c: AppContainer) : ViewModel() {
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+    val members = observeTeam(c).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     fun updateFilter(change: (LibraryFilter) -> LibraryFilter) = _filter.update(change)
+
+    /** Quick generate into the folder being viewed, if any; opens the new song on its Team tab. */
+    fun quickGenerate(request: QuickStartRequest, onCreated: (Long) -> Unit) = viewModelScope.launch {
+        val folder = _filter.value.folderId?.takeIf { it != LibraryFilter.UNFILED }
+        val result = quickGenerate(c, request, folder)
+        result.songId?.let(onCreated) ?: run { _message.value = result.error }
+    }
 
     fun clearMessage() {
         _message.value = null

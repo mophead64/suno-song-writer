@@ -7,7 +7,7 @@ enum class SessionAction(
     val producesVersion: Boolean,
     /** The run dialog asks for instructions, and requires them. */
     val needsInstructions: Boolean = false,
-    /** Shown in the run dialog. Fix needs logged Suno results, which arrive in iteration 6. */
+    /** Shown in the run dialog. Fix starts from a sent snapshot's results screen instead. */
     val runnable: Boolean = true,
 ) {
     WRITE_LYRICS("Write lyrics", producesVersion = true),
@@ -17,6 +17,10 @@ enum class SessionAction(
     TWEAK("Tweak", producesVersion = true, needsInstructions = true),
     FINALISE("Finalise", producesVersion = true),
     FIX("Fix from results", producesVersion = true, runnable = false),
+    /** Idea → a whole first draft, plus a title and genre tags when the song has none. */
+    QUICK_START("Quick start", producesVersion = true),
+    /** A nominated participant decides for the Writers' Room (spec 5.5, auto chair). */
+    CHAIR("Chair decision", producesVersion = false, runnable = false),
 }
 
 /**
@@ -85,8 +89,8 @@ data class TemplateContext(
             "style" to "Current style prompt",
             "lyrics" to "Current lyrics",
             "sliders" to "Current Suno settings",
-            "suggestions" to "Accepted suggestions (Implement)",
-            "results" to "Logged Suno results (Fix, iteration 6)",
+            "suggestions" to "Accepted suggestions (Implement), or the choices to decide on (Chair decision)",
+            "results" to "Logged Suno takes, issues, notes and their fixes (Fix from results)",
             "guide" to "The Suno v6 prompting guide",
             "instructions" to "What you typed when running the step",
         )

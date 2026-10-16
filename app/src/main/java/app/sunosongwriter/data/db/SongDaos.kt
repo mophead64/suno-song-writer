@@ -1,11 +1,14 @@
 package app.sunosongwriter.data.db
 
 import androidx.room.Dao
+import androidx.room.Embedded
 import androidx.room.Insert
 import androidx.room.MapColumn
 import androidx.room.Query
+import androidx.room.Relation
 import androidx.room.Transaction
 import androidx.room.Update
+import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -163,4 +166,121 @@ interface SnapshotDao {
 
     @Query("SELECT DISTINCT songId FROM snapshot")
     fun observeSentSongIds(): Flow<List<Long>>
+
+    @Query("SELECT * FROM snapshot ORDER BY sentAt, id")
+    fun observeAll(): Flow<List<SnapshotEntity>>
+}
+
+/** A take with its issue tags. */
+data class ResultWithIssues(
+    @Embedded val result: SunoResultEntity,
+    @Relation(parentColumn = "id", entityColumn = "resultId") val issues: List<ResultIssueEntity>,
+)
+
+@Dao
+interface ResultDao {
+    @Transaction
+    @Query("SELECT * FROM suno_result WHERE snapshotId = :snapshotId ORDER BY takeIndex, id")
+    fun observeForSnapshot(snapshotId: Long): Flow<List<ResultWithIssues>>
+
+    @Transaction
+    @Query("SELECT * FROM suno_result WHERE snapshotId = :snapshotId ORDER BY takeIndex, id")
+    suspend fun forSnapshot(snapshotId: Long): List<ResultWithIssues>
+
+    @Transaction
+    @Query("SELECT r.* FROM suno_result r JOIN snapshot s ON s.id = r.snapshotId WHERE s.songId = :songId ORDER BY r.snapshotId, r.takeIndex")
+    fun observeForSong(songId: Long): Flow<List<ResultWithIssues>>
+
+    @Transaction
+    @Query("SELECT * FROM suno_result ORDER BY snapshotId, takeIndex")
+    fun observeAll(): Flow<List<ResultWithIssues>>
+
+    @Query("SELECT DISTINCT s.songId FROM suno_result r JOIN snapshot s ON s.id = r.snapshotId")
+    fun observeSongIdsWithResults(): Flow<List<Long>>
+
+    @Query("SELECT COALESCE(MAX(takeIndex), 0) FROM suno_result WHERE snapshotId = :snapshotId")
+    suspend fun maxTakeIndex(snapshotId: Long): Int
+
+    @Insert
+    suspend fun insert(result: SunoResultEntity): Long
+
+    @Update
+    suspend fun update(result: SunoResultEntity)
+
+    @Query("SELECT * FROM suno_result WHERE id = :id")
+    suspend fun get(id: Long): SunoResultEntity?
+
+    @Query("DELETE FROM suno_result WHERE id = :id")
+    suspend fun delete(id: Long)
+
+    @Query("DELETE FROM result_issue WHERE resultId = :resultId")
+    suspend fun clearIssues(resultId: Long)
+
+    @Insert
+    suspend fun insertIssues(issues: List<ResultIssueEntity>)
+
+    @Transaction
+    suspend fun replaceIssues(resultId: Long, tags: List<String>) {
+        clearIssues(resultId)
+        insertIssues(tags.distinct().map { ResultIssueEntity(resultId, it) })
+    }
+
+    // Winners
+
+    @Query("SELECT * FROM song_winner WHERE songId = :songId")
+    fun observeWinner(songId: Long): Flow<SongWinnerEntity?>
+
+    @Query("SELECT * FROM song_winner WHERE songId = :songId")
+    suspend fun winner(songId: Long): SongWinnerEntity?
+
+    @Query("SELECT * FROM song_winner")
+    fun observeWinners(): Flow<List<SongWinnerEntity>>
+
+    @Upsert
+    suspend fun setWinner(winner: SongWinnerEntity)
+
+    @Query("DELETE FROM song_winner WHERE songId = :songId")
+    suspend fun clearWinner(songId: Long)
+
+    // Issue fixes
+
+    @Query("SELECT * FROM issue_fix ORDER BY tag COLLATE NOCASE")
+    fun observeFixes(): Flow<List<IssueFixEntity>>
+
+    @Query("SELECT * FROM issue_fix")
+    suspend fun fixes(): List<IssueFixEntity>
+
+    @Upsert
+    suspend fun upsertFix(fix: IssueFixEntity)
+
+    @Query("DELETE FROM issue_fix WHERE tag = :tag")
+    suspend fun deleteFix(tag: String)
+}
+
+@Dao
+interface RecipeDao {
+    @Query("SELECT * FROM recipe ORDER BY createdAt DESC, id DESC")
+    fun observeAll(): Flow<List<RecipeEntity>>
+
+    @Query("SELECT * FROM recipe ORDER BY createdAt, id")
+    suspend fun getAll(): List<RecipeEntity>
+
+    @Query("SELECT * FROM recipe WHERE id = :id")
+    suspend fun get(id: Long): RecipeEntity?
+
+    @Query("SELECT * FROM recipe WHERE snapshotId = :snapshotId LIMIT 1")
+    fun observeForSnapshot(snapshotId: Long): Flow<RecipeEntity?>
+
+    @Query("SELECT COUNT(*) FROM recipe")
+    suspend fun count(): Int
+
+    @Insert
+    suspend fun insert(recipe: RecipeEntity): Long
+
+    @Query("DELETE FROM recipe WHERE id = :id")
+    suspend fun delete(id: Long)
+
+    /** Best take rating per snapshot, for recipes' live ratings. */
+    @Query("SELECT snapshotId, MAX(rating) AS best FROM suno_result WHERE rating IS NOT NULL GROUP BY snapshotId")
+    fun observeBestRatings(): Flow<Map<@MapColumn("snapshotId") Long, @MapColumn("best") Int>>
 }

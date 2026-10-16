@@ -20,6 +20,8 @@ class SnapshotRepository(
 
     val sentSongIds: Flow<Set<Long>> = dao.observeSentSongIds().map { it.toSet() }
 
+    val all: Flow<List<Snapshot>> = dao.observeAll().map { rows -> rows.map(::toDomain) }
+
     suspend fun get(id: Long): Snapshot? = dao.get(id)?.let(::toDomain)
 
     /** Freezes the version's clean Suno text and settings, exactly as the handoff screen copies them. */

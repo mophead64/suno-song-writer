@@ -72,6 +72,39 @@ class ReplyParserTest {
 
         assertEquals("[Verse]\nLyrics of a lonely song\nNotes on the breeze", ReplyParser.parse(reply, base, SessionAction.TWEAK)!!.content.lyrics)
     }
+
+    @Test
+    fun quickStartRepliesCarryATitleAndGenreTags() {
+        val reply = """
+            **TITLE:** "Tin Roof Blues"
+            TAGS:
+            pop-punk, emo, - midwest emo
+            STYLE:
+            Genre: pop-punk
+            LYRICS:
+            [Verse]
+            Rain on the roof
+            SETTINGS:
+            Weirdness: 40%
+            NOTE:
+            a rainy breakup song
+        """.trimIndent()
+        val parsed = ReplyParser.parse(reply, SongContent(), SessionAction.QUICK_START)!!
+        assertEquals("Tin Roof Blues", parsed.title)
+        assertEquals(listOf("pop-punk", "emo", "midwest emo"), parsed.tags)
+        assertEquals("[Verse]\nRain on the roof", parsed.content.lyrics)
+        assertEquals("pop-punk", parsed.content.style[StyleSection.GENRE])
+        assertEquals(40, parsed.content.settings.weirdness)
+        assertEquals("a rainy breakup song", parsed.note)
+    }
+
+    @Test
+    fun otherRepliesHaveNoTitleOrTags() {
+        val parsed = ReplyParser.parse("LYRICS:\n[Verse]\nTitle track of my life", SongContent(), SessionAction.WRITE_LYRICS)!!
+        assertNull(parsed.title)
+        assertTrue(parsed.tags.isEmpty())
+        assertEquals("[Verse]\nTitle track of my life", parsed.content.lyrics)
+    }
 }
 
 class ReviewParserTest {

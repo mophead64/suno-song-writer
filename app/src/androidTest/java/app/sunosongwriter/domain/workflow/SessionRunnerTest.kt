@@ -13,7 +13,9 @@ import app.sunosongwriter.data.llm.OpenAiCompatibleClient
 import app.sunosongwriter.data.repo.BackendRepository
 import app.sunosongwriter.data.repo.ParticipantRepository
 import app.sunosongwriter.data.repo.RequestCountRepository
+import app.sunosongwriter.data.repo.ResultRepository
 import app.sunosongwriter.data.repo.SessionRepository
+import app.sunosongwriter.data.repo.SnapshotRepository
 import app.sunosongwriter.data.repo.SongRepository
 import app.sunosongwriter.data.repo.TemplateRepository
 import app.sunosongwriter.data.secure.KeystoreCipher
@@ -76,7 +78,9 @@ class SessionRunnerTest {
         OpenAiCompatibleClient(OkHttpClient(), json), json,
     )
     private val gateway = ChatGateway(model, backends, RequestCountRepository(db.requestCountDao()), RequestPacer(System::currentTimeMillis), QuotaTracker(System::currentTimeMillis), freeOnly = { true })
-    private val runner = SessionRunner(scope, gateway, songs, sessions, templates, participants, backends, guide = { "GUIDE TEXT" })
+    private val snapshots = SnapshotRepository(db.snapshotDao(), json)
+    private val results = ResultRepository(db, snapshots)
+    private val runner = SessionRunner(scope, gateway, songs, sessions, templates, participants, backends, guide = { "GUIDE TEXT" }, fixContext = results::fixContext)
 
     @After
     fun tearDown() {
@@ -209,5 +213,84 @@ class SessionRunnerTest {
         awaitSettled(runner.start(RunRequest(f.songId, f.variantId, SessionAction.WRITE_LYRICS, f.writer)))
 
         assertEquals("MINE Tin Roof", model.sent.single().single().content)
+    }
+
+    @Test
+    fun fixFromResultsWorksOnWhatWasSentAndNamesTheIssuesInTheChangeNote() = runBlocking {
+        val f = fixture()
+        val sent = songs.saveVersion(
+            f.variantId,
+            app.sunosongwriter.domain.model.SongContent(
+                style = app.sunosongwriter.domain.model.StylePrompt.fromFreeText("Genre: pop-punk\nVocals: gritty male vocals"),
+                lyrics = "[Verse]\nRain on the roof\n[Chorus]\nTin roof",
+            ),
+            app.sunosongwriter.domain.model.Author.USER, "",
+        )!!
+        val snapshotId = snapshots.markSent(f.songId, sent, "Draft v2")
+        // Edited after sending: the fix must still start from what Suno actually got.
+        songs.saveVersion(f.variantId, sent.content.copy(lyrics = "edited later"), app.sunosongwriter.domain.model.Author.USER, "")
+
+        val noResults = runCatching { runner.start(RunRequest(f.songId, f.variantId, SessionAction.FIX, f.writer, snapshotId = snapshotId)) }
+        assertTrue(noResults.exceptionOrNull() is RunException)
+
+        results.addTake(snapshotId, "https://suno.com/s/1", 2, "cut off mid-chorus", listOf("lyrics-cut-off", "distant-vocals"))
+        model.replies += """STYLE:
+Genre: pop-punk
+Vocals: gritty male vocals, close-mic lead vocals, intimate vocal presence
+Ending: complete every written lyric before a short instrumental outro and final hard stop
+LYRICS:
+[Verse]
+Rain on the roof
+[Chorus]
+Tin roof
+[Instrumental Outro]
+[Hard Stop]
+[End]
+NOTE:
+added a buffer and close-mic vocals"""
+
+        val id = runner.start(RunRequest(f.songId, f.variantId, SessionAction.FIX, f.writer, snapshotId = snapshotId))
+        val message = awaitSettled(id)
+
+        assertEquals(MessageStatus.DONE, message.status)
+        val prompt = model.sent.single().single().content
+        assertTrue(prompt.contains("[Chorus]\nTin roof"))
+        assertFalse(prompt.contains("edited later"))
+        assertTrue(prompt.contains("Issues: Distant vocals, Lyrics cut off"))
+        assertTrue(prompt.contains("close-mic lead vocals, intimate vocal presence"))
+        assertTrue(prompt.contains("Add an instrumental buffer after the final vocal section"))
+        val latest = songs.latest(f.variantId)!!
+        assertEquals("Fixes Distant vocals, Lyrics cut off: added a buffer and close-mic vocals", latest.changeNote)
+        assertTrue(latest.content.lyrics.endsWith("[Instrumental Outro]\n[Hard Stop]\n[End]"))
+        assertTrue(latest.content.style.flatText().contains("close-mic lead vocals"))
+        assertEquals(sent.id, message.basedOnVersionId)
+        assertEquals(snapshotId, message.snapshotId)
+    }
+
+    @Test
+    fun quickStartDraftsTheSongAndFillsOnlyBlankDetails() = runBlocking {
+        val f = fixture()
+        val blank = songs.createSong("", "", "a song about waiting for a call in the rain", emptyList(), null)
+        val blankVariant = songs.observeVariants(blank).first().single().id
+        val reply = "TITLE:\nTin Roof Blues\nTAGS:\npop-punk, emo\nSTYLE:\nGenre: pop-punk\nLYRICS:\n[Verse]\nRain on the roof\nNOTE:\nfirst draft"
+        model.replies += reply
+        model.replies += reply
+
+        awaitSettled(runner.start(RunRequest(blank, blankVariant, SessionAction.QUICK_START, f.writer)))
+        // The fixture song already has a title and tags: they stay.
+        awaitSettled(runner.start(RunRequest(f.songId, f.variantId, SessionAction.QUICK_START, f.writer)))
+
+        val filled = songs.observeSong(blank).first()!!
+        assertEquals("Tin Roof Blues", filled.title)
+        assertEquals(listOf("emo", "pop-punk"), filled.tags)
+        assertEquals("[Verse]\nRain on the roof", songs.latest(blankVariant)!!.content.lyrics)
+        assertTrue(model.sent.first().single().content.contains("waiting for a call in the rain"))
+        val kept = songs.observeSong(f.songId).first()!!
+        assertEquals("Tin Roof", kept.title)
+        assertEquals(listOf("pop-punk"), kept.tags)
+
+        val empty = songs.createSong("", "", "", emptyList(), null)
+        val noIdea = runCatching { runner.start(RunRequest(empty, songs.observeVariants(empty).first().single().id, SessionAction.QUICK_START, f.writer)) }
+        assertTrue(noIdea.exceptionOrNull() is RunException)
     }
 }

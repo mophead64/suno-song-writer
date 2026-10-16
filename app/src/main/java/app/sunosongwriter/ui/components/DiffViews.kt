@@ -3,7 +3,12 @@ package app.sunosongwriter.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -25,6 +30,8 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import app.sunosongwriter.domain.diff.ContentDiff
 import app.sunosongwriter.domain.diff.DiffLine
+import app.sunosongwriter.domain.diff.SideBySideContent
+import app.sunosongwriter.domain.diff.SideRow
 import app.sunosongwriter.domain.diff.Segment
 
 @Immutable
@@ -122,3 +129,80 @@ private fun DiffHeading(text: String) {
 /** Screen readers hear "Added: …" / "Removed: …" instead of the marker and highlighted fragments. */
 private fun Modifier.semanticsDescription(description: String): Modifier =
     clearAndSetSemantics { contentDescription = description }
+
+/** Two variants in columns (spec 5.15). Changed cells are tinted, with word-level highlights. */
+@Composable
+fun SideBySideView(content: SideBySideContent, leftLabel: String, rightLabel: String, modifier: Modifier = Modifier) {
+    val colors = diffColors()
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        SideRowLayout(
+            left = { Text(leftLabel, style = MaterialTheme.typography.titleSmall) },
+            right = { Text(rightLabel, style = MaterialTheme.typography.titleSmall) },
+        )
+        if (content.settings.isNotEmpty()) {
+            DiffHeading("Settings")
+            Column {
+                content.settings.forEach { s ->
+                    val changed = s.old != s.new
+                    SideRowLayout(
+                        left = { SideCell("${s.label}: ${s.old ?: "not set"}", if (changed) colors.removedLine else null, "$leftLabel ${s.label}: ${s.old ?: "not set"}") },
+                        right = { SideCell("${s.label}: ${s.new ?: "not set"}", if (changed) colors.addedLine else null, "$rightLabel ${s.label}: ${s.new ?: "not set"}") },
+                    )
+                }
+            }
+        }
+        if (content.style.isNotEmpty()) {
+            DiffHeading("Style")
+            content.style.forEach { s ->
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(s.section.label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                    SideCells(s.row, colors, leftLabel, rightLabel)
+                }
+            }
+        }
+        DiffHeading("Lyrics")
+        if (content.lyrics.isEmpty()) Text("No lyrics on either side.", style = MaterialTheme.typography.bodyMedium)
+        Column { content.lyrics.forEach { SideCells(it, colors, leftLabel, rightLabel) } }
+    }
+}
+
+@Composable
+private fun SideCells(row: SideRow, colors: DiffColors, leftLabel: String, rightLabel: String) {
+    val changed = row.changed
+    SideRowLayout(
+        left = {
+            row.left?.let { segs ->
+                SideCell(segmentsText(segs, colors), if (changed) colors.removedLine else null, "$leftLabel: ${segs.joinToString("") { it.text }}")
+            }
+        },
+        right = {
+            row.right?.let { segs ->
+                SideCell(segmentsText(segs, colors), if (changed) colors.addedLine else null, "$rightLabel: ${segs.joinToString("") { it.text }}")
+            }
+        },
+    )
+}
+
+@Composable
+private fun SideRowLayout(left: @Composable () -> Unit, right: @Composable () -> Unit) {
+    Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Box(Modifier.weight(1f).fillMaxHeight()) { left() }
+        Box(Modifier.weight(1f).fillMaxHeight()) { right() }
+    }
+}
+
+@Composable
+private fun SideCell(text: String, background: Color?, description: String) = SideCell(AnnotatedString(text), background, description)
+
+@Composable
+private fun SideCell(text: AnnotatedString, background: Color?, description: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.bodySmall,
+        modifier = Modifier
+            .fillMaxSize()
+            .then(if (background != null) Modifier.background(background) else Modifier)
+            .padding(horizontal = 4.dp, vertical = 2.dp)
+            .semanticsDescription(description),
+    )
+}
