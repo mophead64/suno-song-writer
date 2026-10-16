@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Placeholder launcher icon: a music note inside the adaptive-icon safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M48,34 L70,30 L70,64 A7,6 0 1,1 66,58.6 L66,40 L52,42.5 L52,68 A7,6 0 1,1 48,62.6 Z" />
+</vector>

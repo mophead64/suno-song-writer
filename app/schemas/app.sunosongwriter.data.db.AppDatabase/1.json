@@ -1,0 +1,337 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "32dda3d7dfee0ce7b324f4205558cc25",
+    "entities": [
+      {
+        "tableName": "backend",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `presetId` TEXT, `name` TEXT NOT NULL, `baseUrl` TEXT NOT NULL, `modelsUrl` TEXT, `auth` TEXT NOT NULL, `freeAccess` TEXT NOT NULL, `isFreeTier` INTEGER NOT NULL, `rpm` INTEGER, `rpd` INTEGER, `tpm` INTEGER, `modelLimitsJson` TEXT NOT NULL, `limitScope` TEXT NOT NULL, `limitsFreeModelsOnly` INTEGER NOT NULL, `dailyResetZone` TEXT NOT NULL, `streamUsage` INTEGER NOT NULL, `dailyRemainingHeader` INTEGER NOT NULL, `extraHeadersJson` TEXT NOT NULL, `keyHint` TEXT, `createdAt` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "presetId",
+            "columnName": "presetId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "baseUrl",
+            "columnName": "baseUrl",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "modelsUrl",
+            "columnName": "modelsUrl",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "auth",
+            "columnName": "auth",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "freeAccess",
+            "columnName": "freeAccess",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isFreeTier",
+            "columnName": "isFreeTier",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rpm",
+            "columnName": "rpm",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "rpd",
+            "columnName": "rpd",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "tpm",
+            "columnName": "tpm",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "modelLimitsJson",
+            "columnName": "modelLimitsJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "limitScope",
+            "columnName": "limitScope",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "limitsFreeModelsOnly",
+            "columnName": "limitsFreeModelsOnly",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dailyResetZone",
+            "columnName": "dailyResetZone",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "streamUsage",
+            "columnName": "streamUsage",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dailyRemainingHeader",
+            "columnName": "dailyRemainingHeader",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "extraHeadersJson",
+            "columnName": "extraHeadersJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "keyHint",
+            "columnName": "keyHint",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "model_info",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`backendId` INTEGER NOT NULL, `modelId` TEXT NOT NULL, `displayName` TEXT NOT NULL, `pricedFree` INTEGER, `contextLength` INTEGER, `available` INTEGER NOT NULL, `lastSeen` INTEGER NOT NULL, PRIMARY KEY(`backendId`, `modelId`), FOREIGN KEY(`backendId`) REFERENCES `backend`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "backendId",
+            "columnName": "backendId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "modelId",
+            "columnName": "modelId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayName",
+            "columnName": "displayName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "pricedFree",
+            "columnName": "pricedFree",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "contextLength",
+            "columnName": "contextLength",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "available",
+            "columnName": "available",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastSeen",
+            "columnName": "lastSeen",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "backendId",
+            "modelId"
+          ]
+        },
+        "foreignKeys": [
+          {
+            "table": "backend",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "backendId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "participant",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `avatar` TEXT NOT NULL, `defaultRole` TEXT, `backendId` INTEGER, `modelId` TEXT, `fallbacksJson` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, FOREIGN KEY(`backendId`) REFERENCES `backend`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "avatar",
+            "columnName": "avatar",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "defaultRole",
+            "columnName": "defaultRole",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "backendId",
+            "columnName": "backendId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "modelId",
+            "columnName": "modelId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "fallbacksJson",
+            "columnName": "fallbacksJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_participant_backendId",
+            "unique": false,
+            "columnNames": [
+              "backendId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_participant_backendId` ON `${TABLE_NAME}` (`backendId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "backend",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "backendId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "request_count",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`backendId` INTEGER NOT NULL, `modelId` TEXT NOT NULL, `day` TEXT NOT NULL, `count` INTEGER NOT NULL, PRIMARY KEY(`backendId`, `modelId`, `day`), FOREIGN KEY(`backendId`) REFERENCES `backend`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "backendId",
+            "columnName": "backendId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "modelId",
+            "columnName": "modelId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "day",
+            "columnName": "day",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "count",
+            "columnName": "count",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "backendId",
+            "modelId",
+            "day"
+          ]
+        },
+        "foreignKeys": [
+          {
+            "table": "backend",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "backendId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '32dda3d7dfee0ce7b324f4205558cc25')"
+    ]
+  }
+}

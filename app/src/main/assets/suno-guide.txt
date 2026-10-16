@@ -1,0 +1,677 @@
+Some very important information for future suno work
+
+Unofficial Suno v6 Prompting Guide: What Has Been Working for Me
+
+I've been using Suno since April 2026 and, like a lot of people, the transition to v6 threw a wrench into the prompting system I had finally gotten comfortable with.
+
+I've had issues with inconsistent audio quality, distant-sounding vocals and instruments, disappearing guitar layers, strange volume changes, stuttering guitars/drums, unexpected instrumentation, and even songs ending while the vocalist was still singing.
+
+At the same time, v6 has also produced some genuinely interesting genre hybrids, rhythms, and combinations of sounds that I couldn't consistently get from the previous models.
+
+So instead of trying to force v6 to behave exactly like the older versions, I started experimenting with how the prompts themselves might need to change.
+
+I put together this guide based entirely on my own experience making music with Suno. It is NOT an official Suno guide, and none of this should be treated as guaranteed behavior.
+
+I also had a lot of help from ChatGPT putting this together. ChatGPT and I have spent a ridiculous amount of time experimenting with Suno prompts across pop-punk, post-hardcore, metalcore, deathcore, electronic rock, darkwave, hyperpop, alternative rock, cinematic music, and various hybrid genres. This guide is basically the collection of things we've learned through trial, error, wasted credits, successful generations, and plenty of "what the hell did Suno just do?" moments.
+
+
+
+Hopefully some of this helps someone else.
+
+\---
+
+\# **SUNO v6 PROMPTING GUIDE**
+
+
+
+\##A practical cheat sheet for better vocals, fuller instrumentation, cleaner mixes, and fewer broken endings
+
+The biggest lesson I've learned with v6 is:
+
+***\*\*Don't just tell Suno what genre you want. Tell it what the finished recording should actually sound like.\*\****
+
+v6 seems much more willing than previous models to create unusual genre combinations, rhythms, instrumentation, and arrangements. That can be awesome.
+
+It can also produce inconsistent mixes, distant vocals, disappearing instruments, strange volume changes, stripped-down verses, or occasional glitches.
+
+The goal is to give v6 enough freedom to create something interesting without letting the production wander off into the woods.
+
+\---
+
+\# **1. START CONTROLLED**
+
+When developing a new song, I've been having better luck starting with:
+
+*\*\*Model:\*\* Standard v6*  
+
+*\*\*Variety:\*\* 0*  
+
+*\*\*Weirdness:\*\* Usually below 50%*  
+
+*\*\*Style Influence:\*\* High, generally 80-95%*
+
+
+
+I treat the first few generations as calibration.
+
+First make Suno understand the assignment.
+
+Then let it get weird.
+
+I also avoid Max Mode during initial song development. Get standard v6 behaving properly first before spending additional credits testing Max.
+
+Once the song is working, Variety can be increased later if you intentionally want stranger genre hybrids or more unpredictable arrangements.
+
+\---
+
+\# **2. STRUCTURE THE STYLE PROMPT IN MUSICAL ORDER**
+
+A useful order is:
+
+Genre -> Vocals -> Drums -> Guitars -> Bass -> Other Instruments -> Arrangement/Energy -> Production Quality -> Ending Instruction -> Sliders
+
+**Example:**
+
+*Genre: Modern pop-punk, melodic post-hardcore, easycore.*  
+*Vocals: gritty mature male baritone cleans raspy melodic hooks.*  
+*Drums: aggressive punk drums, continuous double bass accents.*  
+*Guitars: bright interlocking lead guitars, fast driving power chords.*  
+*Bass: active melodic bass.*  
+*Other Instruments:*   
+*Arrangement/Energy: full-band energy throughout, foreground guitar riffs during verses, huge anthemic chorus.*  
+*Production Quality: high-fidelity studio production, close-mic vocals, crisp transients, layered instruments with clear separation, stable tonal balance.*  
+*Ending Instructions: complete every written lyric before a short instrumental outro and final hard stop.*
+
+*Sliders: Weirdness: 32%. Style Influence: 90%.*
+
+The important thing here is that you're describing the actual performance instead of only naming genres.
+
+\---
+
+\# **3. ADD A v6 PRODUCTION-QUALITY CLAUSE**
+
+One thing I've started adding to v6 prompts is explicit production language.
+
+Instead of simply saying:
+
+"professional production"
+
+Try describing what that actually means.
+
+**Useful phrases:**
+
+high-fidelity studio production  
+
+close-mic lead vocals  
+
+stable vocal intensity and loudness  
+
+open defined low-mids  
+
+clear high-end air  
+
+crisp transients  
+
+layered instruments with clear separation  
+
+stable tonal balance  
+
+consistent mix fidelity throughout
+
+**A shorter version:**
+
+\*\*high-fidelity studio production, close-mic vocals, crisp transients, clear instrument separation, open low-mids, clear high-end air, stable loudness and tonal balance\*\*
+
+I use this especially when generations sound:
+
+muffled  
+
+distant  
+
+muddy  
+
+inconsistent in volume  
+
+like the singer moved away from the microphone  
+
+like the instruments collapsed into one blurry wall of sound
+
+Don't fill half the Style Box with production terminology, though.
+
+The actual music instructions still need room.
+
+\---
+
+\# **4. DESCRIBE INSTRUMENT ACTIVITY, NOT JUST INSTRUMENTS**
+
+Instead of:
+
+"electric guitars"
+
+Try:
+
+*\[continuous foreground guitar riffs, interlocking melodic leads, fast alternate picking, driving power chords\]*
+
+Instead of:
+
+"aggressive drums"
+
+Try:
+
+\*\*relentless driving drums, rapid double bass, active fills, ghost notes, ride bell accents, energetic transitions\*\*
+
+Instead of:
+
+"bass guitar"
+
+Try:
+
+\*\*active melodic bassline following and countering the guitar riffs\*\*
+
+I've found that v6 seems to respond better when you tell the instruments what they are actually doing.
+
+Use verbs.
+
+\---
+
+\# **5. PREVENT THE "GREAT CHORUS, DEAD VERSE" PROBLEM**
+
+One of my biggest problems with Suno has always been getting a huge intro and chorus followed by verses where half the band apparently went outside for a smoke break.
+
+If you want continuous energy, explicitly say things like:
+
+full-band energy throughout  
+
+continuous foreground guitar activity  
+
+active bass throughout verses  
+
+drums remain energetic during verses  
+
+verses maintain forward momentum  
+
+layered guitars remain present beneath vocals
+
+**A useful compact phrase:**
+
+*\*\*full-band energy throughout with foreground guitar riffs and active drums during verses\*\**
+
+If you want the verses energetic, don't assume Suno knows that.
+
+Tell it.
+
+\---
+
+\# **6. GIVE THE VOCALS CHARACTER**
+
+Instead of:
+
+"male vocals"
+
+Try:
+
+*\*\*mature low-mid male vocals, gritty chest voice, raspy melodic cleans, powerful sustained chorus\*\**
+
+Instead of:
+
+"female vocals"
+
+Try:
+
+*\*\*gritty expressive female cleans, strong chest voice, aggressive edge, powerful melodic chorus\*\**
+
+For harsh vocals:
+
+*\*\*mid-low false cord growls, visceral fry screams, guttural lows\*\**
+
+If you want harsh vocals throughout, reinforce the desired behavior positively:
+
+*\*\*unclean vocals throughout, false cord growls and fry screams in every vocal section\*\**
+
+I've had better results describing what I WANT rather than filling the prompt with everything I DON'T want.
+
+\---
+
+\# **7. USE LYRIC TAGS AS SHORT COMMANDS**
+
+Use brackets for structure and dynamics.
+
+Use parentheses for backing vocals, echoes, or ad-libs.
+
+Example:
+
+\[Verse\]
+
+I kept the lights on all night
+
+Waiting for something to change
+
+\[Pre-Chorus\]
+
+Maybe tomorrow
+
+Maybe this time
+
+\[Chorus\]
+
+WE ARE STILL HERE
+
+(Still here)
+
+WE ARE STILL BREATHING
+
+
+
+Useful section tags:
+
+***\[Intro\]***  
+
+***\[Verse\]***  
+
+***\[Pre-Chorus\]***  
+
+***\[Chorus\]***  
+
+***\[Post-Chorus\]***  
+
+***\[Bridge\]***  
+
+***\[Breakdown\]***  
+
+***\[Guitar Solo\]***  
+
+***\[Final Chorus\]***  
+
+***\[Instrumental Outro\]***  
+
+***\[Hard Stop\]***  
+
+***\[End\]***
+
+
+
+Keep bracket instructions short.
+
+I avoid writing long paragraphs inside brackets because Suno can partially ignore them or occasionally interpret pieces of them strangely.
+
+Put the detailed musical instructions in the Style Box.
+
+\---
+
+\# **8. PREVENT RANDOM INTRO VOCAL NOISE**
+
+If Suno keeps starting songs with random:
+
+*grrrrr*  
+
+*whoaaaa*  
+
+*ooooo*  
+
+And random growling. Don't leave the intro undefined.
+
+Either start the vocals immediately:
+
+*\[Intro\]*
+
+*FIRST LYRIC STARTS HERE*
+
+Or clearly establish an instrumental opening:
+
+*\[Instrumental Intro\]*
+
+Then describe the instrumentation in the Style Box.
+
+Undefined space seems to give Suno permission to improvise.
+
+\---
+
+\# **9. REDUCE THE CHANCE OF SONGS ENDING MID-LYRIC**
+
+This became particularly important for me with v6.
+
+I've had generations literally end while the vocalist was still singing.
+
+Instead of making the final lyric the final event in the song, give Suno somewhere else to land.
+
+Use:
+
+*\[Final Chorus\]*
+
+*final lyrics here*
+
+*final lyrics here*
+
+*final lyrics here*
+
+*\[Instrumental Outro\]*
+
+*\[Hard Stop\]*
+
+*\[End\]*
+
+Then, if space allows, add this to the Style Box:
+
+***\[complete every written lyric before a short instrumental outro and final hard stop\]***
+
+
+
+The idea is that the instrumental outro acts as a safety buffer.
+
+
+
+If the model decides the song is approaching its endpoint, hopefully it uses up the disposable instrumental section instead of murdering the singer halfway through a sentence.
+
+
+
+**IMPORTANT:**
+
+
+
+\[Hard Stop\] and \[End\] are prompting aids.
+
+They are NOT guaranteed fixes for actual technical generation failures.
+
+\---
+
+\# **10. CONTROL OUTRO DRAG**
+
+
+
+The opposite problem also happens.
+
+If Suno decides your 3:45 song needs another 90 seconds of wandering around aimlessly:
+
+*\[Instrumental Outro\]*
+
+*\[Hard Stop\]*
+
+*\[End\]*
+
+
+
+I've had better luck explicitly telling Suno how the song should finish instead of just writing:
+
+*\[Outro\]*
+
+A vague outro gives the model a lot more freedom.
+
+Sometimes way too much freedom.
+
+\---
+
+
+
+\# **11. USE WEIRDNESS DELIBERATELY**
+
+
+
+My rough working range:
+
+
+
+***\[0-30%:\] Controlled / cleaner***  
+
+***\[30-50%:\] Creative sweet spot***  
+
+***\[50-60%:\] Adventurous***  
+
+***\[60%+:\] Experimental territory***
+
+If I'm making a complicated hybrid genre, I'd rather clearly describe the genres and keep Weirdness moderate than crank Weirdness to 80% and hope evolution takes its course.
+
+Example:
+
+*technical deathcore, darkwave horror synths, female rap vocals, cinematic percussion*
+
+at 40-50% Weirdness may produce something much more coherent than a vague prompt at 75%.
+
+\---
+
+\# **12. PRESERVE SUCCESSFUL RECIPES**
+
+This is a big one.
+
+If you have a prompt that produced a fantastic song:
+
+**\*\*SAVE IT EXACTLY AS IT WORKED.\*\***
+
+Don't automatically rewrite every old recipe because Suno released a new model.
+
+Keep:
+
+*Recipe 12*
+
+And create:
+
+*Recipe 12 - v6*
+
+That way you're building a library of proven musical recipes instead of constantly replacing your own work.
+
+\---
+
+\# **13. HYBRID GENRES ARE WHERE v6 GETS REALLY INTERESTING**
+
+One thing I genuinely like about v6 is that it seems better at unusual genre combinations.
+
+Instead of:
+
+metalcore
+
+Try:
+
+*\*\*modern metalcore, California skater pop-punk, emo-pop hooks, darkwave synth textures\*\**
+
+Or:
+
+*\*\*technical deathcore, cinematic horror, female rap, dark electronic synths\*\**
+
+Or:
+
+*\*\*easycore, melodic hardcore, J-rock lead guitars, electronic pop production\*\**
+
+My rule of thumb:
+
+*\*\*One main musical identity + two or three interesting influences\*\**
+
+That usually works better than throwing twelve genres into a blender and hitting PUREE.
+
+\---
+
+\# **14. QUICK TROUBLESHOOTING CHEAT SHEET**
+
+**\*Muddy / blanket-covered mix**
+
+Try:
+
+*\[open defined low-mids, clear high-end air, crisp transients\]*
+
+**\*Vocals sound far away**
+
+Try:
+
+*\[close-mic lead vocals, intimate vocal presence\]*
+
+**\*Volume changes dramatically**
+
+Try:
+
+*\[stable vocal intensity and loudness, consistent mix fidelity throughout\]*
+
+**\*Instruments blur together**
+
+Try:
+
+*\[layered instruments with clear separation\]*
+
+**\*Verses become boring**
+
+Try:
+
+*\[full-band energy throughout, foreground riffs during verses\]*
+
+**\*Guitars disappear**
+
+Try:
+
+*\[continuous guitar activity, layered rhythm and lead guitars throughout\]*
+
+**\*Weak drums**
+
+Don't just say:
+
+"powerful drums"
+
+Describe what the drummer is doing:
+
+*rapid double bass*  
+
+*active fills*  
+
+*ghost notes*  
+
+*ride bell accents*  
+
+*tom fills*  
+
+*blast beats*  
+
+*fast punk rhythm*  
+
+etc.
+
+**\*Random instruments appear**
+
+Try:
+
+Lower Variety  
+
+Lower Weirdness  
+
+Increase Style Influence  
+
+Be more specific about the instrumentation you actually want
+
+**\*Song keeps going forever**
+
+Use:
+
+*\[Instrumental Outro\]*
+
+*\[Hard Stop\]*
+
+*\[End\]*
+
+**\*Song cuts off the final lyrics**
+
+Add an instrumental buffer AFTER the final vocal section.
+
+**\*Vocals are too clean**
+
+Explicitly describe:
+
+*grit*  
+
+*rasp*  
+
+*fry*  
+
+*false cord growls*  
+
+*chest voice*  
+
+*gutturals*  
+
+etc.
+
+**\*Female vocals become overly operatic**
+
+Try:
+
+*\[gritty chest voice, contemporary rock delivery, aggressive edge\]*
+
+**\*Intro takes forever before vocals start**
+
+Start the lyrics immediately or clearly define a short instrumental intro.
+
+\---
+
+\# **15. UNIVERSAL v6 TEMPLATE**
+
+Here's the basic structure I've been using:
+
+
+
+*Genre(s): \[primary genre + supporting genres\]*
+
+*Vocals: \[gender / register / texture / delivery\]*
+
+*Drums: \[tempo feel + kick pattern + fills + intensity\]*
+
+*Guitars: \[riff style + lead style + activity\]*
+
+*Bass: \[movement + tone\]*
+
+*Other Instruments: \[optional\]*
+
+*Arrangement: full-band energy throughout, active instrumentation during verses, strong transitions, memorable chorus*
+
+*Production: high-fidelity studio production, close-mic vocals, crisp transients, open defined low-mids, clear high-end air, layered instruments with clear separation, stable loudness and tonal balance*
+
+*Ending: complete every written lyric before a short instrumental outro and final hard stop*
+
+*Weirdness: \[X\]%. Style Influence: \[X\]%.*
+
+
+
+Then finish the lyric box with:
+
+*\[Final Chorus\]*
+
+*final lyrics*
+
+*\[Instrumental Outro\]*
+
+*\[Hard Stop\]*
+
+*\[End\]*
+
+\---
+
+\# **THE SHORT VERSION**
+
+If I had to reduce everything I've learned into one rule:
+
+***\[Prompt v6 like you're directing the musicians AND the recording engineer at the same time.\]***
+
+Tell it the genre.
+
+Tell the vocalist how to sing.
+
+Tell the guitarist what their hands are doing.
+
+Tell the drummer how busy they should be.
+
+Tell the bass player how active they should be.
+
+Tell the arrangement where the energy needs to stay.
+
+Tell the mix what "good audio" actually means.
+
+And give the song somewhere to land AFTER the final lyric.
+
+None of this completely eliminates Suno randomness or technical generation failures.
+
+It's AI music generation. Sometimes the machine is still going to wake up and choose violence.
+
+But this prompting method has given me more control while still allowing v6 to do the thing I think it does better than previous models:
+
+Come up with strange genre hybrids, rhythms, and combinations of sounds that I wouldn't necessarily have thought to ask for.
+
+Again, this is completely unofficial and based only on my own experience.
+
+I had a lot of help from ChatGPT developing and organizing this system through our repeated experiments making songs in Suno.
+
+If anyone finds improvements, better wording, or other v6 tricks that consistently work, please share them.
+
+The more of us testing this stuff together, the faster we can figure out what v6 actually responds to.

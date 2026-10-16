@@ -1,0 +1,272 @@
+{
+  "version": 1,
+  "presets": [
+    {
+      "id": "ollama-local",
+      "name": "Ollama (on your computer)",
+      "description": "Models running in Ollama on your own machine. Free and private.",
+      "baseUrl": "http://10.0.2.2:11434/v1",
+      "auth": "none",
+      "freeAccess": "all",
+      "local": true,
+      "baseUrlHint": "On the emulator use http://10.0.2.2:11434/v1. On a phone, use your computer's LAN or Tailscale address, and start Ollama with OLLAMA_HOST=0.0.0.0.",
+      "dataUseNote": "Prompts stay on your own machine.",
+      "signupUrl": "https://ollama.com/download",
+      "verifiedOn": "2026-10-16",
+      "limitsNote": "Ollama's default context window is 4,096 tokens, and the app can't change it per request. Long prompts (Finalise includes the whole Suno guide, about 6,000 tokens) are silently cut off unless you raise it: Ollama app → Settings → Context length, or set OLLAMA_CONTEXT_LENGTH=16384 and restart Ollama."
+    },
+    {
+      "id": "lmstudio-local",
+      "name": "LM Studio (on your computer)",
+      "description": "Models served by LM Studio's local server. Free and private.",
+      "baseUrl": "http://10.0.2.2:1234/v1",
+      "auth": "none",
+      "freeAccess": "all",
+      "local": true,
+      "baseUrlHint": "Start the server in LM Studio (Developer tab). On the emulator use http://10.0.2.2:1234/v1. On a phone, enable 'Serve on local network' and use your computer's address.",
+      "dataUseNote": "Prompts stay on your own machine.",
+      "signupUrl": "https://lmstudio.ai",
+      "verifiedOn": "2026-10-16"
+    },
+    {
+      "id": "openrouter",
+      "name": "OpenRouter",
+      "description": "One key for hundreds of models, including free ':free' variants. Only free models are used in free-only mode.",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "auth": "bearer",
+      "freeAccess": "pricing",
+      "limits": {
+        "rpm": 20,
+        "rpd": 50
+      },
+      "limitScope": "backend",
+      "limitsFreeModelsOnly": true,
+      "dailyResetZone": "UTC",
+      "extraHeaders": {
+        "X-Title": "Song Writer"
+      },
+      "dataUseNote": "Free models are hosted by third-party providers, some of which log prompts or use them for training. Check each model's provider on openrouter.ai.",
+      "limitsNote": "Free models: 20 requests/minute, 50/day (1,000/day once you have bought at least $10 of credit). Failed requests count towards the daily cap.",
+      "signupUrl": "https://openrouter.ai/keys",
+      "limitsUrl": "https://openrouter.ai/docs/api/reference/limits",
+      "verifiedOn": "2026-10-16"
+    },
+    {
+      "id": "gemini",
+      "name": "Google AI Studio (Gemini)",
+      "description": "Gemini models with a free API tier. No card needed.",
+      "baseUrl": "https://generativelanguage.googleapis.com/v1beta/openai",
+      "auth": "bearer",
+      "freeAccess": "key_tier",
+      "freeTierDefault": true,
+      "limits": {
+        "rpm": 10,
+        "rpd": 20
+      },
+      "modelLimits": [
+        {
+          "match": "flash-lite",
+          "rpm": 15,
+          "rpd": 500
+        }
+      ],
+      "limitScope": "model",
+      "dailyResetZone": "America/Los_Angeles",
+      "dataUseNote": "On the free tier, Google may use your prompts and responses to improve its products, and human reviewers may read them.",
+      "limitsNote": "Free-tier limits vary by model and project and change often. Check AI Studio's rate-limit page for your actual values. Daily limits reset at midnight Pacific time.",
+      "signupUrl": "https://aistudio.google.com/apikey",
+      "limitsUrl": "https://aistudio.google.com/rate-limit",
+      "verifiedOn": "2026-10-16"
+    },
+    {
+      "id": "groq",
+      "name": "Groq",
+      "description": "Very fast open-weight models (e.g. gpt-oss, Qwen) with a free developer tier.",
+      "baseUrl": "https://api.groq.com/openai/v1",
+      "auth": "bearer",
+      "freeAccess": "key_tier",
+      "freeTierDefault": true,
+      "limits": {
+        "rpm": 30,
+        "rpd": 1000,
+        "tpm": 8000
+      },
+      "limitScope": "model",
+      "dailyRemainingHeader": true,
+      "dailyResetZone": "UTC",
+      "dataUseNote": "Check Groq's current data-use policy before sending anything private.",
+      "limitsNote": "Per-model limits, typically 30 requests/minute and 1,000/day for chat models. Groq reports remaining requests in response headers.",
+      "signupUrl": "https://console.groq.com/keys",
+      "limitsUrl": "https://console.groq.com/settings/limits",
+      "verifiedOn": "2026-10-16"
+    },
+    {
+      "id": "mistral",
+      "name": "Mistral",
+      "description": "Mistral's models. The free plan needs a phone-verified account.",
+      "baseUrl": "https://api.mistral.ai/v1",
+      "auth": "bearer",
+      "freeAccess": "key_tier",
+      "freeTierDefault": true,
+      "limits": {
+        "rpm": 60
+      },
+      "limitScope": "backend",
+      "dailyResetZone": "UTC",
+      "streamUsage": false,
+      "dataUseNote": "On the free plan, Mistral may use your prompts to train its models unless you opt out in the admin console.",
+      "limitsNote": "Limits are set per workspace. Check the admin console for your values.",
+      "signupUrl": "https://console.mistral.ai/api-keys",
+      "limitsUrl": "https://admin.mistral.ai/plateforme/limits",
+      "verifiedOn": "2026-10-16"
+    },
+    {
+      "id": "github-models",
+      "name": "GitHub Models",
+      "description": "Models from several vendors, free with a GitHub account. Use a personal access token with the models:read permission.",
+      "baseUrl": "https://models.github.ai/inference",
+      "modelsUrl": "https://models.github.ai/catalog/models",
+      "auth": "bearer",
+      "freeAccess": "key_tier",
+      "freeTierDefault": true,
+      "limits": {
+        "rpm": 10,
+        "rpd": 50
+      },
+      "limitScope": "model",
+      "dailyResetZone": "UTC",
+      "dataUseNote": "Check GitHub's current data-use policy for GitHub Models before sending anything private.",
+      "limitsNote": "Free limits depend on the model's tier and your Copilot plan: low-tier models about 15 requests/minute and 150/day, high-tier about 10/minute and 50/day. The defaults here assume high-tier.",
+      "signupUrl": "https://github.com/settings/personal-access-tokens",
+      "limitsUrl": "https://docs.github.com/en/github-models/use-github-models/prototyping-with-ai-models#rate-limits",
+      "verifiedOn": "2026-10-16"
+    },
+    {
+      "id": "cerebras",
+      "name": "Cerebras",
+      "description": "Very fast inference for open-weight models.",
+      "baseUrl": "https://api.cerebras.ai/v1",
+      "auth": "bearer",
+      "freeAccess": "key_tier",
+      "freeTierDefault": false,
+      "limits": {
+        "rpm": 30
+      },
+      "limitScope": "model",
+      "dailyResetZone": "UTC",
+      "dataUseNote": "Check Cerebras' current data-use policy for your plan.",
+      "limitsNote": "Unverified: as of October 2026 reports conflict on whether Cerebras still has a free tier. Only turn on 'free tier key' if your account shows one.",
+      "signupUrl": "https://cloud.cerebras.ai",
+      "verifiedOn": "2026-10-16",
+      "unverified": true
+    },
+    {
+      "id": "ollama-cloud",
+      "name": "Ollama Cloud",
+      "description": "Large models hosted by Ollama, using an ollama.com API key.",
+      "baseUrl": "https://ollama.com/v1",
+      "modelsUrl": "https://ollama.com/api/tags",
+      "auth": "bearer",
+      "freeAccess": "key_tier",
+      "freeTierDefault": false,
+      "limitScope": "backend",
+      "dailyResetZone": "UTC",
+      "dataUseNote": "Check Ollama's current data-use policy for cloud models.",
+      "limitsNote": "Unverified: Ollama's free plan uses session and weekly usage caps rather than published per-request limits. Turn on 'free tier key' if you're on the free plan.",
+      "signupUrl": "https://ollama.com/settings/keys",
+      "limitsUrl": "https://ollama.com/settings/usage",
+      "verifiedOn": "2026-10-16",
+      "unverified": true
+    },
+    {
+      "id": "relay-claude",
+      "name": "Claude app (relay)",
+      "description": "Claude's free plan, through the Claude app. No API needed: the app hands you a ready-made prompt, you paste it into Claude and share the reply back.",
+      "baseUrl": "",
+      "auth": "none",
+      "freeAccess": "all",
+      "kind": "relay",
+      "relayPackage": "com.anthropic.claude",
+      "dataUseNote": "Prompts go through your own Claude account and follow that app's privacy settings.",
+      "signupUrl": "https://play.google.com/store/apps/details?id=com.anthropic.claude",
+      "verifiedOn": "2026-10-16"
+    },
+    {
+      "id": "relay-chatgpt",
+      "name": "ChatGPT app (relay)",
+      "description": "ChatGPT's free plan, through the ChatGPT app. No API needed: the app hands you a ready-made prompt, you paste it into ChatGPT and share the reply back.",
+      "baseUrl": "",
+      "auth": "none",
+      "freeAccess": "all",
+      "kind": "relay",
+      "relayPackage": "com.openai.chatgpt",
+      "dataUseNote": "Prompts go through your own ChatGPT account and follow that app's privacy settings.",
+      "signupUrl": "https://play.google.com/store/apps/details?id=com.openai.chatgpt",
+      "verifiedOn": "2026-10-16"
+    },
+    {
+      "id": "relay-gemini",
+      "name": "Gemini app (relay)",
+      "description": "The Gemini app, for when you'd rather use it than an API key. No API needed: the app hands you a ready-made prompt, you paste it into Gemini and share the reply back.",
+      "baseUrl": "",
+      "auth": "none",
+      "freeAccess": "all",
+      "kind": "relay",
+      "relayPackage": "com.google.android.apps.bard",
+      "dataUseNote": "Prompts go through your own Gemini account and follow that app's privacy settings.",
+      "signupUrl": "https://play.google.com/store/apps/details?id=com.google.android.apps.bard",
+      "verifiedOn": "2026-10-16"
+    },
+    {
+      "id": "relay-grok",
+      "name": "Grok app (relay)",
+      "description": "Grok's free plan, through the Grok app. No API needed: the app hands you a ready-made prompt, you paste it into Grok and share the reply back.",
+      "baseUrl": "",
+      "auth": "none",
+      "freeAccess": "all",
+      "kind": "relay",
+      "relayPackage": "ai.x.grok",
+      "dataUseNote": "Prompts go through your own Grok account and follow that app's privacy settings.",
+      "signupUrl": "https://play.google.com/store/apps/details?id=ai.x.grok",
+      "verifiedOn": "2026-10-16"
+    },
+    {
+      "id": "relay-deepseek",
+      "name": "DeepSeek app (relay)",
+      "description": "DeepSeek's free chat, through the DeepSeek app. No API needed: the app hands you a ready-made prompt, you paste it into DeepSeek and share the reply back.",
+      "baseUrl": "",
+      "auth": "none",
+      "freeAccess": "all",
+      "kind": "relay",
+      "relayPackage": "com.deepseek.chat",
+      "dataUseNote": "Prompts go through your own DeepSeek account and follow that app's privacy settings.",
+      "signupUrl": "https://play.google.com/store/apps/details?id=com.deepseek.chat",
+      "verifiedOn": "2026-10-16"
+    },
+    {
+      "id": "relay-custom",
+      "name": "Other chat app (relay)",
+      "description": "Any chat app: enter its package name. You paste prompts and share replies back.",
+      "baseUrl": "",
+      "auth": "none",
+      "freeAccess": "all",
+      "kind": "relay",
+      "relayPackage": "",
+      "dataUseNote": "Depends on the app. Check its privacy settings before sending anything private.",
+      "verifiedOn": "2026-10-16"
+    },
+    {
+      "id": "custom",
+      "name": "Custom (OpenAI-compatible)",
+      "description": "Any server that implements /chat/completions and /models.",
+      "baseUrl": "",
+      "auth": "bearer",
+      "freeAccess": "key_tier",
+      "freeTierDefault": false,
+      "limitScope": "backend",
+      "dailyResetZone": "UTC",
+      "dataUseNote": "Depends on the provider. Check its terms before sending anything private.",
+      "verifiedOn": "2026-10-16"
+    }
+  ]
+}
