@@ -28,6 +28,10 @@ render.experimental.xml
 *.jks
 *.keystore
 keystore.properties
+<<<<<<< HEAD
+=======
+keystore.properties
+>>>>>>> 24ca17f (Add results loop, recipes, usage tracking, auto chair and APK builds)
 
 # Google Services (e.g. APIs or Firebase)
 google-services.json
@@ -39,4 +43,8 @@ google-services.json
 docs/
 
 # Shareable APKs from scripts/build-apk.sh
+<<<<<<< HEAD
 dist/
+=======
+dist/
+>>>>>>> 24ca17f (Add results loop, recipes, usage tracking, auto chair and APK builds)
