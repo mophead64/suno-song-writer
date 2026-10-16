@@ -66,6 +66,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.sunosongwriter.domain.model.SongProgress
+import app.sunosongwriter.domain.model.SongStep
 import app.sunosongwriter.domain.model.StyleSection
 import app.sunosongwriter.domain.model.SunoSettings
 import app.sunosongwriter.domain.model.Version
@@ -97,6 +99,7 @@ fun SongScreen(
     onOpenRoom: (Long) -> Unit,
     onHandoff: (songId: Long, versionId: Long) -> Unit,
     onOpenResults: (songId: Long, snapshotId: Long) -> Unit,
+    onBuildTeam: () -> Unit,
 ) {
     val vm = appViewModel { c, saved -> SongViewModel(saved, c.songs, c.snapshots, c.results, c.recipes) }
     val snapshots by vm.snapshots.collectAsStateWithLifecycle()
@@ -176,6 +179,40 @@ fun SongScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
             )
+            if (!editing) {
+                val progress = SongProgress.of(
+                    hasIdea = state.song.concept.isNotBlank(),
+                    hasTeam = teamUi?.members?.isNotEmpty() == true,
+                    hasDraft = state.current.content.lyrics.isNotBlank() && !state.current.content.style.isEmpty,
+                    refined = state.refined,
+                    sent = snapshots.isNotEmpty(),
+                    hasResults = snapshots.any { it.takes > 0 },
+                )
+                SongTimeline(
+                    progress,
+                    actionLabel = { step ->
+                        when (step) {
+                            SongStep.IDEA -> "Add idea"
+                            SongStep.TEAM -> "Set up"
+                            SongStep.DRAFT -> "Quick start"
+                            SongStep.REFINE -> "Team tab"
+                            SongStep.SEND -> "Send"
+                            SongStep.RESULTS -> "Log results"
+                        }
+                    },
+                    onAction = { step ->
+                        when (step) {
+                            SongStep.IDEA -> onOpenDetails(vm.songId)
+                            SongStep.TEAM -> onBuildTeam()
+                            SongStep.DRAFT -> dialog = SongDialog.QuickStart
+                            SongStep.REFINE -> tab = SongTab.TEAM.ordinal
+                            SongStep.SEND -> onHandoff(vm.songId, state.current.id)
+                            SongStep.RESULTS -> snapshots.firstOrNull()?.let { onOpenResults(vm.songId, it.snapshot.id) }
+                        }
+                    },
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                )
+            }
             PrimaryScrollableTabRow(selectedTabIndex = tab, edgePadding = 8.dp) {
                 SongTab.entries.forEachIndexed { i, t ->
                     Tab(selected = tab == i, onClick = { tab = i }, text = { Text(t.label) }, enabled = !(editing && (t == SongTab.HISTORY || t == SongTab.TEAM)))

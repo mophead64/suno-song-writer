@@ -10,6 +10,8 @@ data class ChatMessage(val role: Role, val content: String) {
 data class ChatOptions(
     val temperature: Double? = null,
     val maxTokens: Int? = null,
+    /** Ask for a JSON object reply (`response_format`). [ChatGateway] drops it for backends that don't support it. */
+    val jsonObject: Boolean = false,
 )
 
 /** Where and how to reach one OpenAI-compatible server. */
@@ -20,6 +22,8 @@ data class Endpoint(
     val modelsUrl: String? = null,
     val streamUsage: Boolean = true,
     val extraHeaders: Map<String, String> = emptyMap(),
+    /** Another header to send the key in, besides `Authorization: Bearer` (Anthropic: `x-api-key`). */
+    val keyHeader: String? = null,
 )
 
 /** A model as listed by a server's model endpoint. */

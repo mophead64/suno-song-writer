@@ -46,7 +46,8 @@ fun describeRef(ref: ModelRef?, options: List<ModelOption>, backends: List<Backe
 
 /**
  * Picks a model across all backends. In free-only mode paid models are hidden (spec 5.2);
- * unavailable models (no longer listed by their backend) are never offered.
+ * unavailable models (no longer listed by their backend) are never offered. Typing an id that isn't
+ * listed offers it on each API backend, for providers whose model list is incomplete or unavailable.
  */
 @Composable
 fun ModelPickerDialog(
@@ -54,12 +55,19 @@ fun ModelPickerDialog(
     freeOnly: Boolean,
     onPick: (ModelRef) -> Unit,
     onDismiss: () -> Unit,
+    backends: List<Backend> = emptyList(),
 ) {
     var query by remember { mutableStateOf("") }
     val visible = options
         .filter { it.model.available && (!freeOnly || it.isFree) }
         .filter { query.isBlank() || it.label.contains(query.trim(), ignoreCase = true) || it.model.modelId.contains(query.trim(), ignoreCase = true) }
         .sortedWith(compareBy({ it.backend.name.lowercase() }, { !it.isFree }, { it.model.modelId.lowercase() }))
+    val typed = query.trim()
+    val manual = if (typed.isEmpty() || typed.contains(' ') || options.any { it.model.modelId == typed }) {
+        emptyList()
+    } else {
+        backends.filter { !it.isRelay && (!freeOnly || it.isFree(typed, null)) }
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Choose a model") },
@@ -80,13 +88,22 @@ fun ModelPickerDialog(
                         modifier = Modifier.padding(top = 8.dp),
                     )
                 }
-                if (visible.isEmpty()) {
+                if (visible.isEmpty() && manual.isEmpty()) {
                     Text(
                         if (options.isEmpty()) "No models yet. Add a backend in Settings → Backends, then refresh its models." else "No matching models.",
                         modifier = Modifier.padding(top = 16.dp),
                     )
                 }
                 LazyColumn(modifier = Modifier.heightIn(max = 420.dp).padding(top = 8.dp)) {
+                    items(manual, key = { "manual/${it.id}" }) { backend ->
+                        ListItem(
+                            headlineContent = { Text("Use \u201c$typed\u201d") },
+                            supportingContent = { Text("Model id on ${backend.name}, as typed") },
+                            trailingContent = { CostLabel(backend.isFree(typed, null)) },
+                            modifier = Modifier.clickable { onPick(ModelRef(backend.id, typed)) },
+                        )
+                        HorizontalDivider()
+                    }
                     items(visible, key = { "${it.ref.backendId}/${it.ref.modelId}" }) { option ->
                         ListItem(
                             headlineContent = { Text(option.model.displayName) },

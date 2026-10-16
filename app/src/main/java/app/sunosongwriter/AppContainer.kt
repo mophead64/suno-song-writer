@@ -143,6 +143,7 @@ class AppContainer(val application: Application) {
             freeOnly = settings::isFreeOnly,
             nowMillis = clock,
             ledger = usage,
+            jsonMode = { b -> b.presetId?.let { presets.find(it)?.jsonMode } == true },
         )
     }
 }

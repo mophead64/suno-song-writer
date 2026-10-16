@@ -20,6 +20,10 @@ object StarterTeam {
         "github-models" to ("GitHub Models" to "🐙"),
         "cerebras" to ("Cerebras" to "🧠"),
         "ollama-cloud" to ("Ollama Cloud" to "☁️"),
+        "anthropic" to ("Claude API" to "🎻"),
+        "openai" to ("ChatGPT API" to "💬"),
+        "xai" to ("Grok API" to "🛰️"),
+        "deepseek" to ("DeepSeek API" to "🐋"),
         "relay-claude" to ("Claude" to "🎻"),
         "relay-chatgpt" to ("ChatGPT" to "💬"),
         "relay-gemini" to ("Gemini app" to "🌟"),
@@ -28,9 +32,15 @@ object StarterTeam {
     )
 
     /** Strongest writer first: who writes lyrics, implements and finalises. Unknown API backends sit before local ones. */
-    private val writerPreference = listOf("gemini", "groq", "openrouter", "mistral", "github-models", "cerebras", "ollama-cloud", null, "ollama-local", "lmstudio-local")
+    private val writerPreference = listOf(
+        "gemini", "anthropic", "openai", "xai", "deepseek", "groq", "openrouter", "mistral", "github-models", "cerebras", "ollama-cloud",
+        null, "ollama-local", "lmstudio-local",
+    )
 
-    private val notForText = listOf("embed", "tts", "whisper", "orpheus", "guard", "image", "vision", "llava", "moondream", "audio", "live", "transcribe")
+    private val notForText = listOf(
+        "embed", "tts", "whisper", "orpheus", "guard", "image", "vision", "llava", "moondream", "audio", "live", "transcribe",
+        "dall-e", "moderation", "realtime", "search", "davinci", "babbage", "sora",
+    )
 
     fun participantName(backend: Backend): String =
         looks[backend.presetId]?.first ?: backend.name.replace(Regex("""\s*\((?:on your computer|relay)\)\s*$"""), "").trim().ifEmpty { backend.name }
@@ -56,6 +66,10 @@ object StarterTeam {
             "gemini" -> usable.filter { "flash" in it.modelId && "lite" !in it.modelId }.maxByOrNull { it.modelId } ?: usable.maxByOrNull { it.modelId }
             "groq" -> preferring("gpt-oss-120b", "qwen", "gpt-oss-20b", "llama")
             "openrouter" -> preferring("deepseek", "qwen", "llama", "gemma", "mistral")
+            // Newest Sonnet, then newest of anything; ids sort so that newer versions come later.
+            "anthropic" -> usable.filter { "sonnet" in it.modelId }.maxByOrNull { it.modelId } ?: usable.maxByOrNull { it.modelId }
+            "openai" -> usable.filter { it.modelId.startsWith("gpt-") && "mini" !in it.modelId && "nano" !in it.modelId }.maxByOrNull { it.modelId }
+            "xai" -> usable.filter { "grok" in it.modelId && "mini" !in it.modelId }.maxByOrNull { it.modelId }
             // Official library models ("llama3.2") before community fine-tunes ("someone/llama3.2-uncensored").
             "ollama-local", "lmstudio-local" -> usable.firstOrNull { '/' !in it.modelId }
             else -> usable.firstOrNull()

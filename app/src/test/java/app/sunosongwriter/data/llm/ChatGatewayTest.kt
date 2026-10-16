@@ -47,6 +47,7 @@ class ChatGatewayTest {
         freeOnly: Boolean = true,
         quotas: QuotaTracker = QuotaTracker { testScheduler.currentTime },
         ledger: UsageLedger = UsageLedger.None,
+        jsonMode: Boolean = false,
     ) = ChatGateway(
         transport = transport,
         targets = { ResolvedTarget(backend, model, Endpoint(backend.baseUrl, apiKey)) },
@@ -56,7 +57,37 @@ class ChatGatewayTest {
         freeOnly = { freeOnly },
         nowMillis = { testScheduler.currentTime },
         ledger = ledger,
+        jsonMode = { jsonMode },
     )
+
+    /** Replies in order and records the options each request was sent with. */
+    private class OptionsTransport(vararg responses: List<ChatEvent>) : ChatTransport {
+        val queue = ArrayDeque(responses.toList())
+        val sent = mutableListOf<ChatOptions>()
+        override fun stream(endpoint: Endpoint, model: String, messages: List<ChatMessage>, options: ChatOptions) =
+            flowOf(*queue.removeFirst().toTypedArray()).also { sent += options }
+    }
+
+    @Test
+    fun jsonModeIsOnlySentToBackendsThatSupportIt() = runTest {
+        val unsupported = OptionsTransport(ok)
+        gateway(unsupported).stream(ref, hello, ChatOptions(jsonObject = true)).toList()
+        assertEquals(false, unsupported.sent.single().jsonObject)
+
+        val supported = OptionsTransport(ok)
+        gateway(supported, jsonMode = true).stream(ref, hello, ChatOptions(jsonObject = true)).toList()
+        assertEquals(true, supported.sent.single().jsonObject)
+    }
+
+    @Test
+    fun aRequestRejectedForJsonModeIsSentAgainWithoutIt() = runTest {
+        val transport = OptionsTransport(listOf(ChatEvent.Failed(LlmError.BadRequest(400, "response_format not supported"))), ok)
+
+        val events = gateway(transport, jsonMode = true).stream(ref, hello, ChatOptions(jsonObject = true)).toList()
+
+        assertEquals(ok, events)
+        assertEquals(listOf(true, false), transport.sent.map { it.jsonObject })
+    }
 
     private class FakeLedger(val block: LlmError? = null) : UsageLedger {
         val recorded = mutableListOf<UsageEvent>()

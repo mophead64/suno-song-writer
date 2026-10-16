@@ -12,6 +12,7 @@ import app.sunosongwriter.data.llm.ResolvedTarget
 import app.sunosongwriter.data.llm.TargetResolver
 import app.sunosongwriter.data.presets.BackendPreset
 import app.sunosongwriter.data.secure.SecretStore
+import app.sunosongwriter.domain.model.AuthStyle
 import app.sunosongwriter.domain.model.Backend
 import app.sunosongwriter.domain.model.ModelInfo
 import app.sunosongwriter.domain.model.ModelRef
@@ -81,6 +82,7 @@ class BackendRepository(
         modelsUrl = backend.modelsUrl,
         streamUsage = backend.streamUsage,
         extraHeaders = backend.extraHeaders,
+        keyHeader = "x-api-key".takeIf { backend.auth == AuthStyle.BEARER_AND_X_API_KEY },
     )
 
     /**

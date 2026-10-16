@@ -35,6 +35,18 @@ class StarterTeamTest {
     }
 
     @Test
+    fun picksCurrentChatModelsOnDirectProviders() {
+        val paid = testBackend(isFreeTier = false)
+        val anthropic = listOf("claude-haiku-4-5", "claude-opus-5-5", "claude-sonnet-4-6", "claude-sonnet-5-5").map { model(it) }
+        assertEquals("claude-sonnet-5-5", StarterTeam.pickModel("anthropic", anthropic, paid, freeOnly = false)?.modelId)
+
+        val openai = listOf("dall-e-3", "gpt-5-mini", "gpt-5.2", "gpt-realtime", "omni-moderation-latest", "text-embedding-3-large", "whisper-1").map { model(it) }
+        assertEquals("gpt-5.2", StarterTeam.pickModel("openai", openai, paid, freeOnly = false)?.modelId)
+        // Paid providers have nothing to offer in free-only mode.
+        assertNull(StarterTeam.pickModel("openai", openai, paid))
+    }
+
+    @Test
     fun noFreeChatModelMeansNoPick() {
         assertNull(StarterTeam.pickModel("ollama-local", listOf(model("nomic-embed-text")), testBackend()))
     }

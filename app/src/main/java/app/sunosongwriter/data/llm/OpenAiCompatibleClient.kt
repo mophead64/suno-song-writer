@@ -65,6 +65,7 @@ class OpenAiCompatibleClient(
             if (endpoint.streamUsage) put("stream_options", buildJsonObject { put("include_usage", true) })
             options.temperature?.let { put("temperature", it) }
             options.maxTokens?.let { put("max_tokens", it) }
+            if (options.jsonObject) put("response_format", buildJsonObject { put("type", "json_object") })
             put("messages", buildJsonArray {
                 messages.forEach { m ->
                     add(buildJsonObject {
@@ -218,7 +219,10 @@ class OpenAiCompatibleClient(
 
     private fun requestBuilder(url: HttpUrl, endpoint: Endpoint): Request.Builder =
         Request.Builder().url(url).apply {
-            endpoint.apiKey?.takeIf { it.isNotBlank() }?.let { header("Authorization", "Bearer $it") }
+            endpoint.apiKey?.takeIf { it.isNotBlank() }?.let { key ->
+                header("Authorization", "Bearer $key")
+                endpoint.keyHeader?.let { header(it, key) }
+            }
             endpoint.extraHeaders.forEach { (name, value) -> header(name, value) }
         }
 

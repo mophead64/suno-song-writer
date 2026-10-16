@@ -35,6 +35,8 @@ data class BackendPreset(
     /** The provider's `x-ratelimit-remaining-requests` header counts requests per day (Groq). */
     val dailyRemainingHeader: Boolean = false,
     val extraHeaders: Map<String, String> = emptyMap(),
+    /** Accepts `response_format: {"type": "json_object"}`, used for reviews and chair decisions. */
+    val jsonMode: Boolean = false,
     val local: Boolean = false,
     val baseUrlHint: String? = null,
     val dataUseNote: String,

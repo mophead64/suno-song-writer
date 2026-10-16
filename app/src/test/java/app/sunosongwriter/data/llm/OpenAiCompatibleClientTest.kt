@@ -68,6 +68,29 @@ class OpenAiCompatibleClientTest {
     }
 
     @Test
+    fun anthropicStyleBackendsAlsoSendTheKeyAsXApiKey() = kotlinx.coroutines.test.runTest {
+        server.enqueue(MockResponse.Builder().body("""{"data":[{"id":"claude-sonnet-5-5","display_name":"Claude Sonnet 5.5","type":"model"}]}""").build())
+
+        val models = client.listModels(endpoint.copy(keyHeader = "x-api-key", extraHeaders = mapOf("anthropic-version" to "2023-06-01")))
+
+        val request = server.takeRequest()
+        assertEquals("Bearer sk-test", request.headers["Authorization"])
+        assertEquals("sk-test", request.headers["x-api-key"])
+        assertEquals("2023-06-01", request.headers["anthropic-version"])
+        assertEquals("Claude Sonnet 5.5", models.single().displayName)
+    }
+
+    @Test
+    fun jsonModeAddsResponseFormat() {
+        server.enqueue(sse("data: [DONE]").build())
+
+        runBlocking { client.stream(endpoint, "test-model", listOf(ChatMessage(ChatMessage.Role.USER, "hi")), ChatOptions(jsonObject = true)).toList() }
+
+        val body = json.parseToJsonElement(server.takeRequest().body!!.utf8()).jsonObject
+        assertEquals("json_object", body["response_format"]!!.jsonObject["type"]!!.jsonPrimitive.content)
+    }
+
+    @Test
     fun sendsModelMessagesStreamFlagAndBearerKey() {
         server.enqueue(sse("data: [DONE]").build())
 

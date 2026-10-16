@@ -218,6 +218,7 @@ fun AppNavHost() {
                 onOpenRoom = { nav.navigate(RoomRoute(it)) },
                 onHandoff = { songId, versionId -> nav.navigate(HandoffRoute(songId, versionId = versionId)) },
                 onOpenResults = { songId, snapshotId -> nav.navigate(ResultsRoute(songId, snapshotId)) },
+                onBuildTeam = { nav.navigate(StarterTeamRoute) },
             )
         }
         composable<HandoffRoute> {

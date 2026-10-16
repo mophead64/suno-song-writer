@@ -39,7 +39,8 @@ interface RequestCounter {
  *    emitting [ChatEvent.RateLimited] so the UI can say what's happening
  *
  * Paid requests are also refused once a spend limit is reached, and every finished request's usage is
- * recorded in the [UsageLedger] (spec 5.17).
+ * recorded in the [UsageLedger] (spec 5.17). JSON mode is only sent to backends that support it, and a
+ * request it makes the provider reject is sent again without it.
  */
 class ChatGateway(
     private val transport: ChatTransport,
@@ -51,6 +52,8 @@ class ChatGateway(
     private val nowMillis: () -> Long = System::currentTimeMillis,
     private val maxRetries: Int = 3,
     private val ledger: UsageLedger = UsageLedger.None,
+    /** Whether a backend accepts `response_format` (from its preset). */
+    private val jsonMode: (Backend) -> Boolean = { false },
 ) {
     fun stream(ref: ModelRef, messages: List<ChatMessage>, options: ChatOptions = ChatOptions(), tag: UsageTag = UsageTag()): Flow<ChatEvent> = flow {
         val target = targets.resolve(ref)
@@ -84,6 +87,7 @@ class ChatGateway(
             return@flow
         }
 
+        var opts = if (options.jsonObject && !jsonMode(backend)) options.copy(jsonObject = false) else options
         var attempt = 0
         while (true) {
             val pace = pacer.reserve(backend.limitKey(ref.modelId), limits.rpm)
@@ -96,7 +100,8 @@ class ChatGateway(
             var retryAfter: Long? = null
             var sawContent = false
             var usage: ChatEvent.Usage? = null
-            transport.stream(target.endpoint, ref.modelId, messages, options).collect { event ->
+            var retryWithoutJson = false
+            transport.stream(target.endpoint, ref.modelId, messages, opts).collect { event ->
                 when (event) {
                     is ChatEvent.Delta -> {
                         sawContent = true
@@ -116,12 +121,18 @@ class ChatGateway(
                         val error = classify(backend, ref.modelId, event.error)
                         if (error is LlmError.RateLimited && !sawContent && attempt < maxRetries) {
                             retryAfter = retryDelay(error, attempt)
+                        } else if (error is LlmError.BadRequest && opts.jsonObject && !sawContent) {
+                            retryWithoutJson = true
                         } else {
                             emit(ChatEvent.Failed(error))
                         }
                     }
                     else -> emit(event)
                 }
+            }
+            if (retryWithoutJson) {
+                opts = opts.copy(jsonObject = false)
+                continue
             }
             val wait = retryAfter ?: break
             attempt++

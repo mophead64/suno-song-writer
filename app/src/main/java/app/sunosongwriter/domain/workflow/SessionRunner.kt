@@ -4,6 +4,7 @@ import app.sunosongwriter.data.db.SessionMessageEntity
 import app.sunosongwriter.data.llm.ChatEvent
 import app.sunosongwriter.data.llm.ChatGateway
 import app.sunosongwriter.data.llm.ChatMessage
+import app.sunosongwriter.data.llm.ChatOptions
 import app.sunosongwriter.data.llm.LlmError
 import app.sunosongwriter.data.llm.UsageTag
 import app.sunosongwriter.data.repo.BackendRepository
@@ -178,13 +179,15 @@ class SessionRunner(
         val session = sessions.get(message.sessionId) ?: return
         val history = if (session.fullTranscript) transcriptHistory(message) else emptyList()
         val sent = history + ChatMessage(ChatMessage.Role.USER, message.prompt)
-        val answer = streamWithFallbacks(messageId, participant, sent) ?: return
+        // Reviews and chair decisions reply in JSON; JSON mode makes that reliable where the backend has it.
+        val options = ChatOptions(jsonObject = message.action == SessionAction.REVIEW || message.action == SessionAction.CHAIR)
+        val answer = streamWithFallbacks(messageId, participant, sent, options) ?: return
         val updated = sessions.message(messageId) ?: return
         warnIfTruncated(updated, sent)
         handleReply(updated.copy(content = answer.text)) { firstReply ->
             // One retry for unreadable review JSON (spec 5.6), to the model that answered.
             val retry = sent + ChatMessage(ChatMessage.Role.ASSISTANT, firstReply) + ChatMessage(ChatMessage.Role.USER, JSON_RETRY)
-            when (val r = stream(messageId, answer.ref, retry)) {
+            when (val r = stream(messageId, answer.ref, retry, options)) {
                 is StreamResult.Ok -> r.text
                 is StreamResult.Failed -> {
                     fail(sessions.message(messageId) ?: return@handleReply null, r.error.message)
@@ -264,14 +267,14 @@ class SessionRunner(
      * Relay fallbacks are skipped: they need the user. Free-only mode is enforced by the gateway, so a
      * paid fallback is refused rather than used.
      */
-    private suspend fun streamWithFallbacks(messageId: Long, participant: Participant, sent: List<ChatMessage>): Answer? {
+    private suspend fun streamWithFallbacks(messageId: Long, participant: Participant, sent: List<ChatMessage>, options: ChatOptions): Answer? {
         val refs = listOfNotNull(participant.model) + participant.fallbacks
         val failures = mutableListOf<String>()
         var retryAt: Long? = null
         for ((index, ref) in refs.withIndex()) {
             val backend = backends.get(ref.backendId)
             if (backend == null || backend.isRelay) continue
-            when (val result = stream(messageId, ref, sent)) {
+            when (val result = stream(messageId, ref, sent, options)) {
                 is StreamResult.Ok -> {
                     if (index > 0) {
                         sessions.update(messageId) { it.copy(warning = "Answered by a fallback, because: ${failures.joinToString("; ")}") }
@@ -290,14 +293,14 @@ class SessionRunner(
     }
 
     /** Streams one reply into the message row. */
-    private suspend fun stream(messageId: Long, ref: ModelRef, sent: List<ChatMessage>): StreamResult {
+    private suspend fun stream(messageId: Long, ref: ModelRef, sent: List<ChatMessage>, options: ChatOptions = ChatOptions()): StreamResult {
         val text = StringBuilder()
         var lastWrite = 0L
         val model = backends.resolve(ref)?.let { t -> "${t.model?.displayName ?: ref.modelId} · ${t.backend.name}" }
         val tag = sessions.message(messageId)?.let { m -> UsageTag(sessions.get(m.sessionId)?.songId, m.sessionId, messageId) } ?: UsageTag(messageId = messageId)
         sessions.update(messageId) { it.copy(status = MessageStatus.STREAMING.name, modelLabel = model ?: it.modelLabel, content = "", error = null) }
         var failed: LlmError? = null
-        gateway.stream(ref, sent, tag = tag).collect { event ->
+        gateway.stream(ref, sent, options, tag).collect { event ->
             when (event) {
                 is ChatEvent.Delta -> {
                     text.append(event.text)

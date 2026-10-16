@@ -10,6 +10,7 @@ import app.sunosongwriter.data.repo.SnapshotRepository
 import app.sunosongwriter.data.repo.SongRepository
 import app.sunosongwriter.domain.model.Author
 import app.sunosongwriter.domain.model.Snapshot
+import app.sunosongwriter.domain.model.SongProgress
 import app.sunosongwriter.domain.model.Song
 import app.sunosongwriter.domain.model.SongContent
 import app.sunosongwriter.domain.model.StylePrompt
@@ -33,6 +34,8 @@ data class SongUi(
     val current: Version,
     /** The selected variant's versions, newest first. */
     val history: List<Version>,
+    /** The team has worked on the song (any variant): for the timeline. */
+    val refined: Boolean = false,
 )
 
 /** Unsaved edits. One edit session becomes one version when saved. */
@@ -94,7 +97,7 @@ class SongViewModel(
         val variant = variants.firstOrNull { it.id == selected } ?: variants.first()
         val history = versions.filter { it.variantId == variant.id }.sortedByDescending { it.number }
         if (history.isEmpty()) return@combine null
-        SongUi(song, variants, variant, history.first(), history)
+        SongUi(song, variants, variant, history.first(), history, SongProgress.refined(variants, versions))
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     fun selectVariant(id: Long) {

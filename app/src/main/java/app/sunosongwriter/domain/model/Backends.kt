@@ -7,6 +7,9 @@ import kotlinx.serialization.Serializable
 enum class AuthStyle {
     @SerialName("none") NONE,
     @SerialName("bearer") BEARER,
+
+    /** The key as a bearer token and in `x-api-key`: Anthropic's model list needs the latter. */
+    @SerialName("bearer_and_x_api_key") BEARER_AND_X_API_KEY,
 }
 
 /** How the app decides whether a backend's models cost money (spec 5.1, 5.2). */
@@ -85,7 +88,7 @@ data class Backend(
 
     val isRelay: Boolean get() = kind == BackendKind.RELAY
 
-    val needsKey: Boolean get() = auth == AuthStyle.BEARER && !isRelay
+    val needsKey: Boolean get() = auth != AuthStyle.NONE && !isRelay
 
     /** [pricedFree] as for [isFree]; it matters when [limitsFreeModelsOnly] is set. */
     fun limitsFor(modelId: String, pricedFree: Boolean? = null): Limits {

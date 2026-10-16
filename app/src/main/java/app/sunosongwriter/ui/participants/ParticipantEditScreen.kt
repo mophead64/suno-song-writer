@@ -200,6 +200,7 @@ fun ParticipantEditScreen(onBack: () -> Unit) {
         ModelPickerDialog(
             options = catalog.options,
             freeOnly = catalog.freeOnly,
+            backends = catalog.backends,
             onPick = { ref ->
                 when (target) {
                     PickerTarget.PRIMARY -> vm.edit { it.copy(model = ref, fallbacks = it.fallbacks - ref) }

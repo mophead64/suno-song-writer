@@ -65,7 +65,8 @@ cp "$APK" "$OUT"
 
 echo
 echo "APK:     $OUT ($(du -h "$OUT" | cut -f1))"
-echo "SHA-256: $(shasum -a 256 "$OUT" | cut -d' ' -f1)"
+if command -v sha256sum >/dev/null; then SUM="$(sha256sum "$OUT")"; else SUM="$(shasum -a 256 "$OUT")"; fi
+echo "SHA-256: ${SUM%% *}"
 [[ -n "${CERT:-}" ]] && echo "Signed:  $CERT"
 echo
 echo "To install: send the file to the phone and open it (allow installs from that app when asked),"
